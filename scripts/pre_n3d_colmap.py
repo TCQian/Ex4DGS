@@ -42,7 +42,7 @@ def extractframes(videopath, startframe=0, endframe=300, downscale=1):
     
     os.makedirs(output_dir, exist_ok=True)
 
-    if all(os.path.join(output_dir, "{:06d}.png".format(i)) for i in range(startframe, endframe)):
+    if all(os.path.exists(os.path.join(output_dir, "{:06d}.png".format(i))) for i in range(startframe, endframe)):
         print(f"Already extracted all the frames in {output_dir}")
         return
 
