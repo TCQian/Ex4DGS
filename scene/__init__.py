@@ -165,7 +165,7 @@ class Scene:
         if self.loaded_iter:
             print(args.duration, gaussians.duration)
             if os.path.exists(os.path.join(self.model_path, "chkpnt{}.pth".format(self.loaded_iter))) and not opt is None:
-                model_args = torch.load(os.path.join(self.model_path, "chkpnt{}.pth".format(self.loaded_iter)))
+                model_args = torch.load(os.path.join(self.model_path, "chkpnt{}.pth".format(self.loaded_iter)), weights_only=False)
                 self.gaussians.restore(model_args[0], opt)
                 self.set_sampling_len(gaussians.duration)
             else:
