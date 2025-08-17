@@ -13,5 +13,5 @@ conda activate Ex4DGS
 # python train.py --config configs/N3V/n3v_base.json --model_path output/dynerf/cut_roasted_beef  --source_path data/dynerf/cut_roasted_beef
 # python render.py --model_path output/dynerf/cut_roasted_beef --source_path data/dynerf/cut_roasted_beef --skip_train --iteration 40000
 
-python train.py --config configs/N3V/n3v_base.json --model_path output/cmu/basketball  --source_path data/cmu/basketball
+python train.py --config configs/CMU/cmu_base.json --model_path output/cmu/basketball  --source_path data/cmu/basketball
 python render.py --model_path output/cmu/basketball --source_path data/cmu/basketball --skip_train --iteration 40000
