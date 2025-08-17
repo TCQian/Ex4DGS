@@ -579,8 +579,81 @@ def readColmapSceneInfoNeural3DVideo(path, images, eval, args):
     return scene_info
 
 
+def readPanopticmeta(datadir: str, json_path: str):
+    meta_file = os.path.join(datadir, json_path)
+    with open(meta_file, "r") as f:
+        meta = json.load(f)
+
+    # meta['w2c'][0] is a list of world-to-camera 4×4 matrices for t=0
+    w2c0 = np.array(meta["w2c"][0], dtype=np.float32)       # (N_cams, 4, 4)
+    inv_w2c0 = np.linalg.inv(w2c0)                          # (N_cams, 4, 4)
+    centers = inv_w2c0[:, :3, 3]                            # (N_cams, 3)
+    mean_center = centers.mean(axis=0, keepdims=True)       # (1, 3)
+    scene_radius = 1.1 * np.max(np.linalg.norm(centers - mean_center, axis=-1))
+
+    fxs = []
+    fys = []
+    for t_idx in range(len(meta["k"])):
+        Ks = meta["k"][t_idx]
+        for K_list in Ks:
+            K = np.array(K_list, dtype=np.float32).reshape(3, 3)
+            fxs.append(K[0, 0])
+            fys.append(K[1, 1])
+    mean_fx = np.mean(fxs)
+    mean_fy = np.mean(fys)
+    FovX = focal2fov(mean_fx, meta['w'])
+    FovY = focal2fov(mean_fy, meta['h'])
+
+    cam_infos = []
+    for t_idx in range(len(meta["k"])):
+        Ks = meta["k"][t_idx]  # list of 3×3 intrinsics
+        W2Cs = meta["w2c"][t_idx]
+        FNs = meta["fn"][t_idx]
+        CIDs = meta["cam_id"][t_idx]
+        for K_list, w2c_list, fn, uid in zip(Ks, W2Cs, FNs, CIDs):
+            # get the intrinsics
+            # K = np.array(K_list, dtype=np.float32).reshape(3,3)
+            # fx, fy, cx, cy = K[0,0], K[1,1], K[0,2], K[1,2]
+            # FovX = focal2fov(fx, meta['w'])
+            # FovY = focal2fov(fy, meta['h'])
+            # cxr = (cx / meta['w']) - 0.5
+            # cyr = (cy / meta['h']) - 0.5
+            # get R and T from w2c_list
+            w2c = np.array(w2c_list, dtype=np.float32).reshape(4, 4)
+            R = np.transpose(w2c[:3, :3])
+            T = w2c[:3, 3]
+            cam_info = CameraInfo2(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image_path=os.path.join(datadir, 'ims', fn), image_name=fn, width=meta['w'], height=meta['h'], near=0.01, far=100, timestamp=t_idx, pose=None, hpdirecitons=None, cxr=0.0, cyr=0.0)
+            cam_infos.append(cam_info)
+
+    return cam_infos, scene_radius
+
+def readPanopticSportsinfos(datadir, images, eval, args):
+    train_cam_infos, scene_radius = readPanopticmeta(datadir, "train_meta.json")
+    test_cam_infos, _ = readPanopticmeta(datadir, "test_meta.json")
+    nerf_normalization = {"radius": scene_radius, "translate": np.zeros(3, dtype=np.float32)}
+
+    ply_path = os.path.join(datadir, "pointd3D.ply")
+
+        # Since this data set has no colmap data, we start with random points
+    plz_path = os.path.join(datadir, "init_pt_cld.npz")
+    data = np.load(plz_path)["data"]
+    xyz = data[:,:3]
+    rgb = data[:,3:6]
+    num_pts = xyz.shape[0]
+    pcd = BasicPointCloud(points=xyz, colors=rgb, normals=np.ones((num_pts, 3)))
+    storePly(ply_path, xyz, rgb)
+    scene_info = SceneInfo(point_cloud=pcd,
+                           train_cameras=train_cam_infos,
+                           test_cameras=test_cam_infos,
+                           nerf_normalization=nerf_normalization,
+                           ply_path=ply_path)
+    return scene_info
+
+
+
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
     "Technicolor": readColmapSceneInfoTechnicolor,
     "Neural3DVideo": readColmapSceneInfoNeural3DVideo,
+    "PanopticSports" : readPanopticSportsinfos,
 }

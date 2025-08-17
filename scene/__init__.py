@@ -71,6 +71,8 @@ class Scene:
             scene_info = sceneLoadTypeCallbacks["Technicolor"](args.source_path, args.images, args.eval, args)
         elif loader == "neural3dvideo":
             scene_info = sceneLoadTypeCallbacks["Neural3DVideo"](args.source_path, args.images, args.eval, args)
+        elif os.path.exists(os.path.join(args.source_path,"train_meta.json")):
+            scene_info = sceneLoadTypeCallbacks["PanopticSports"](args.source_path, args.images, args.eval, args)
         else:
             assert False, "Could not recognize scene type!"
 
