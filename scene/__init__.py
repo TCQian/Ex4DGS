@@ -71,7 +71,7 @@ class Scene:
             scene_info = sceneLoadTypeCallbacks["Technicolor"](args.source_path, args.images, args.eval, args)
         elif loader == "neural3dvideo":
             scene_info = sceneLoadTypeCallbacks["Neural3DVideo"](args.source_path, args.images, args.eval, args)
-        elif os.path.exists(os.path.join(args.source_path,"train_meta.json")):
+        elif loader == "cmupanoptic":
             scene_info = sceneLoadTypeCallbacks["PanopticSports"](args.source_path, args.images, args.eval, args)
         else:
             assert False, "Could not recognize scene type!"
@@ -96,12 +96,12 @@ class Scene:
             for resolution_scale in resolution_scales:
                 print("Loading Training Cameras")
                 
-                if loader in ["colmapvalid", "colmap", "technicolorvalid", "technicolor", "neural3dvideo"]:     
+                if loader in ["colmapvalid", "colmap", "technicolorvalid", "technicolor", "neural3dvideo", "cmupanoptic"]:     
                     self.train_cameras[resolution_scale] = cameraList_from_camInfosVideo2(scene_info.train_cameras, resolution_scale, args)
                     self.train_cameras[resolution_scale] = sorted(self.train_cameras[resolution_scale], key=lambda x: (x.timestamp, x.colmap_id))
                     
                 print("Loading Test Cameras")
-                if loader in ["colmapvalid", "colmap", "technicolorvalid", "technicolor", "neural3dvideo"]:  
+                if loader in ["colmapvalid", "colmap", "technicolorvalid", "technicolor", "neural3dvideo", "cmupanoptic"]:  
                     self.test_cameras[resolution_scale] = cameraList_from_camInfosVideo2(scene_info.test_cameras, resolution_scale, args)
                     self.test_cameras[resolution_scale] = sorted(self.test_cameras[resolution_scale], key=lambda x: (x.timestamp, x.colmap_id))
             
