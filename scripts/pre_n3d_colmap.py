@@ -30,9 +30,11 @@ import pickle
 import sys 
 import argparse
 
-sys.path.append(".")
-from dataset_utils.etc_utils import posetow2c_matrcs, rotmat2qvec, getcolmapsinglen3d
-from dataset_utils.colmap.pre_colmap import * 
+# Add the parent directory to Python path to allow imports from models
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from models.Ex4DGS.dataset_utils.etc_utils import posetow2c_matrcs, rotmat2qvec, getcolmapsinglen3d
+from models.Ex4DGS.dataset_utils.colmap.pre_colmap import * 
 
 
 def extractframes(videopath, startframe=0, endframe=300, downscale=1):
@@ -170,6 +172,12 @@ if __name__ == "__main__" :
 
     args = parser.parse_args()
     videopath = args.videopath
+
+    # clear existing output
+    if os.path.exists(videopath.replace(".mp4", "")):
+        shutil.rmtree(videopath.replace(".mp4", ""))
+    if os.path.exists(videopath.replace(".mp4", "colmap_0")):
+        shutil.rmtree(videopath.replace(".mp4", "colmap_0"))
 
     startframe = args.startframe
     endframe = args.endframe
