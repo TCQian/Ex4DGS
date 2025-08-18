@@ -30,14 +30,9 @@ import pickle
 import sys 
 import argparse
 
-# Add the parent directory to Python path to allow imports from models
-parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-sys.path.append(parent_dir)
-
-print(os.listdir())
-
-from models.Ex4DGS.dataset_utils.etc_utils import posetow2c_matrcs, rotmat2qvec, getcolmapsinglen3d
-from models.Ex4DGS.dataset_utils.colmap.pre_colmap import * 
+sys.path.append(".")
+from dataset_utils.etc_utils import posetow2c_matrcs, rotmat2qvec, getcolmapsinglen3d
+from dataset_utils.colmap.pre_colmap import * 
 
 
 def extractframes(videopath, startframe=0, endframe=300, downscale=1):
