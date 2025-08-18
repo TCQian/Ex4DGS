@@ -30,7 +30,11 @@ import pickle
 import sys 
 import argparse
 
-sys.path.append(".")
+script_dir = os.path.dirname(os.path.abspath(__file__))          # …/models/Ex4DGS/scripts
+ex4dgs_dir = os.path.dirname(script_dir)                          # …/models/Ex4DGS
+if ex4dgs_dir not in sys.path:
+    sys.path.insert(0, ex4dgs_dir)
+
 from dataset_utils.etc_utils import posetow2c_matrcs, rotmat2qvec, getcolmapsinglen3d
 from dataset_utils.colmap.pre_colmap import * 
 
