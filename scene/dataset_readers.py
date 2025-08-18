@@ -616,13 +616,13 @@ def readPanopticmeta(datadir: str, json_path: str):
             fx, fy, cx, cy = K[0,0], K[1,1], K[0,2], K[1,2]
             FovX = focal2fov(fx, meta['w'])
             FovY = focal2fov(fy, meta['h'])
-            cxr = (cx / meta['w']) - 0.5
-            cyr = (cy / meta['h']) - 0.5
+            # cxr = (cx / meta['w']) - 0.5
+            # cyr = (cy / meta['h']) - 0.5
             # get R and T from w2c_list
             w2c = np.array(w2c_list, dtype=np.float32).reshape(4, 4)
             R = np.transpose(w2c[:3, :3])
             T = w2c[:3, 3]
-            cam_info = CameraInfo2(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image_path=os.path.join(datadir, 'ims', fn), image_name=fn, width=meta['w'], height=meta['h'], near=0.01, far=100, timestamp=t_idx, pose=None, hpdirecitons=None, cxr=cxr, cyr=cyr)
+            cam_info = CameraInfo2(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image_path=os.path.join(datadir, 'ims', fn), image_name=fn, width=meta['w'], height=meta['h'], near=0.01, far=100, timestamp=t_idx, pose=None, hpdirecitons=None, cxr=0.0, cyr=0.0)
             cam_infos.append(cam_info)
 
     return cam_infos, scene_radius
