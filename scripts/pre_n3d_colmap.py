@@ -175,12 +175,6 @@ if __name__ == "__main__" :
     args = parser.parse_args()
     videopath = args.videopath
 
-    # clear existing output
-    if os.path.exists(videopath.replace(".mp4", "")):
-        shutil.rmtree(videopath.replace(".mp4", ""))
-    if os.path.exists(videopath.replace(".mp4", "colmap_0")):
-        shutil.rmtree(videopath.replace(".mp4", "colmap_0"))
-
     startframe = args.startframe
     endframe = args.endframe
     stride = args.stride
