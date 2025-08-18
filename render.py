@@ -72,7 +72,10 @@ def render_set(model_path, name, iteration, scene, gaussians, pipeline, backgrou
             img_name = cam.image_name
             
             if save_img:
-                torchvision.utils.save_image(rendering, os.path.join(render_path, img_name))
+                # Flatten the image name by replacing directory separators with underscores
+                flat_img_name = img_name.replace('/', '_').replace('\\', '_')
+                full_img_path = os.path.join(render_path, flat_img_name)
+                torchvision.utils.save_image(rendering, full_img_path)
             psnrs.append(psnr(rendering.unsqueeze(0), gt.unsqueeze(0)))
             ssims.append(ssim(rendering.unsqueeze(0), gt.unsqueeze(0))) 
             skssims.append(sk_ssim(rendering.detach().cpu().numpy(), gt.detach().cpu().numpy(), data_range=1, multichannel=True, channel_axis=0)) 
