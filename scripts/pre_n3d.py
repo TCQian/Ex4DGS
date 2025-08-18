@@ -183,7 +183,13 @@ if __name__ == "__main__" :
     
     if not videopath.endswith("/"):
         videopath = videopath + "/"
-    
+
+    # clear existing output
+    if os.path.exists(videopath.replace(".mp4", "")):
+        shutil.rmtree(videopath.replace(".mp4", ""))
+    if os.path.exists(videopath.replace(".mp4", "colmap_0")):
+        shutil.rmtree(videopath.replace(".mp4", "colmap_0"))
+
     # # ## step1
     print("start extracting 300 frames from videos")
     videoslist = glob.glob(videopath + "*.mp4")
