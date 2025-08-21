@@ -5,9 +5,6 @@ import subprocess
 import numpy as np 
 
 
-import subprocess
-import sys
-
 def normalize(x):
     return x / np.linalg.norm(x)
 
@@ -100,28 +97,6 @@ def qvec2rotmat(qvec):
          2 * qvec[2] * qvec[3] + 2 * qvec[0] * qvec[1],
          1 - 2 * qvec[1]**2 - 2 * qvec[2]**2]])
 
-def run_colmap_command(cmd, step_name):
-    """Run a COLMAP command with proper error handling and output capture"""
-    print(f"Running {step_name}: {cmd}")
-    try:
-        result = subprocess.run(
-            cmd, 
-            shell=True, 
-            capture_output=True, 
-            text=True, 
-            check=True
-        )
-        print(f" {step_name} completed successfully")
-        if result.stdout.strip():
-            print(f"Output: {result.stdout}")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f" {step_name} failed with exit code {e.returncode}")
-        print(f"Command: {cmd}")
-        print(f"Error output: {e.stderr}")
-        if e.stdout.strip():
-            print(f"Standard output: {e.stdout}")
-        return False
 
 def getcolmapsinglen3d(folder, offset):
     os.environ["XDG_RUNTIME_DIR"] = "/tmp/runtime-root"
@@ -140,40 +115,41 @@ def getcolmapsinglen3d(folder, offset):
     if not os.path.exists(distortedmodel):
         os.makedirs(distortedmodel)
         
-    # Step 1: Feature extraction
     featureextract = "colmap feature_extractor --database_path " + dbfile+ " --image_path " + inputimagefolder + " --SiftExtraction.edge_threshold 30" + " --SiftExtraction.peak_threshold 0.004"
-    if not run_colmap_command(featureextract, "Feature extraction"):
-        sys.exit(1)
+    
+    exit_code = os.system(featureextract)
+    if exit_code != 0:
+        exit(exit_code)
         
-    # Step 2: Feature matching
     featurematcher = "colmap exhaustive_matcher --database_path " + dbfile
-    if not run_colmap_command(featurematcher, "Feature matching"):
-        sys.exit(1)
+    exit_code = os.system(featurematcher)
+    if exit_code != 0:
+        exit(exit_code)
 
-    # Step 3: Point triangulation
-    # threshold is from   https://github.com/google-research/multinerf/blob/5b4d4f64608ec8077222c52fdf814d40acc10bc1/scripts/local_colmap_and_resize.sh#L62
+   # threshold is from   https://github.com/google-research/multinerf/blob/5b4d4f64608ec8077222c52fdf814d40acc10bc1/scripts/local_colmap_and_resize.sh#L62
     triandmap = "colmap point_triangulator --database_path " +   dbfile  + " --image_path "+ inputimagefolder + " --output_path " + distortedmodel \
     + " --input_path " + manualinputfolder + " --Mapper.ba_global_function_tolerance=0.000001"
-    if not run_colmap_command(triandmap, "Point triangulation"):
-        sys.exit(1)
-    print(f"Executed: {triandmap}")
+   
+    exit_code = os.system(triandmap)
+    if exit_code != 0:
+       exit(exit_code)
+    print(triandmap)
     
     if os.path.exists(os.path.join(folder, "images")):
         shutil.rmtree(os.path.join(folder, "images"))
 
-    # Step 4: Image undistortion
     img_undist_cmd = "colmap" + " image_undistorter --image_path " + inputimagefolder + " --input_path " + distortedmodel  + " --output_path " + folder  \
     + " --output_type COLMAP" 
-    if not run_colmap_command(img_undist_cmd, "Image undistortion"):
-        sys.exit(1)
-    print(f"Executed: {img_undist_cmd}")
+    exit_code = os.system(img_undist_cmd)
+    if exit_code != 0:
+        exit(exit_code)
+    print(img_undist_cmd)
 
-    # Step 5: Clean up input folder
     removeinput = "rm -r " + inputimagefolder
-    if not run_colmap_command(removeinput, "Cleanup input folder"):
-        print("Warning: Failed to remove input folder, but continuing...")
+    exit_code = os.system(removeinput)
+    if exit_code != 0:
+        exit(exit_code)
 
-    # Step 6: Reorganize sparse folder
     files = os.listdir(folder + "/sparse")
     os.makedirs(folder + "/sparse/0", exist_ok=True)
     for file in files:
