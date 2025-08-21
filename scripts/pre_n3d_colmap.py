@@ -100,10 +100,6 @@ def convertdynerftocolmapdb(path, offset=0, downscale=1):
     savecamera = os.path.join(manualfolder, "cameras.txt")
     savepoints = os.path.join(manualfolder, "points3D.txt")
     
-    # Also save to sparse folder for COLMAP standard structure
-    sparse_images_txt = os.path.join(sparsefolder, "images.txt")
-    sparse_cameras_txt = os.path.join(sparsefolder, "cameras.txt")
-    sparse_points_txt = os.path.join(sparsefolder, "points3D.txt")
 
     imagetxtlist = []
     cameratxtlist = []
@@ -167,16 +163,6 @@ def convertdynerftocolmapdb(path, offset=0, downscale=1):
             f.write(line)
     with open(savepoints, "w") as f:
         pass
-    
-    # Also write to sparse folder
-    with open(sparse_images_txt, "w") as f:
-        for line in imagetxtlist :
-            f.write(line)
-    with open(sparse_cameras_txt, "w") as f:
-        for line in cameratxtlist :
-            f.write(line)
-    with open(sparse_points_txt, "w") as f:
-        pass 
 
 
 if __name__ == "__main__" :
