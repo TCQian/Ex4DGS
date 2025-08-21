@@ -4,8 +4,6 @@ import subprocess
 
 import numpy as np 
 
-
-import subprocess
 import sys
 
 def normalize(x):
@@ -124,8 +122,30 @@ def run_colmap_command(cmd, step_name):
         return False
 
 def getcolmapsinglen3d(folder, offset):
-    os.environ["XDG_RUNTIME_DIR"] = "/tmp/runtime-root"
+    # Set up environment for headless COLMAP operation
+    runtime_dir = "/tmp/runtime-root"
+    os.environ["XDG_RUNTIME_DIR"] = runtime_dir
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    
+    # Create the runtime directory with proper permissions
+    if not os.path.exists(runtime_dir):
+        try:
+            os.makedirs(runtime_dir, mode=0o700)
+            print(f"Created runtime directory: {runtime_dir}")
+        except Exception as e:
+            print(f"Warning: Could not create {runtime_dir}: {e}")
+            # Fallback to user's home directory
+            runtime_dir = os.path.expanduser("~/tmp/runtime-root")
+            os.environ["XDG_RUNTIME_DIR"] = runtime_dir
+            os.makedirs(runtime_dir, mode=0o700, exist_ok=True)
+            print(f"Using fallback runtime directory: {runtime_dir}")
+    
+    # Additional environment variables for headless operation
+    os.environ["DISPLAY"] = ":0"
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    os.environ["QT_QPA_FONTDIR"] = "/usr/share/fonts"
+    os.environ["MESA_GL_VERSION_OVERRIDE"] = "3.3"
+    os.environ["MESA_GLSL_VERSION_OVERRIDE"] = "330"
     folder = os.path.join(folder, "colmap_" + str(offset))
     assert os.path.exists(folder)
 
@@ -143,7 +163,12 @@ def getcolmapsinglen3d(folder, offset):
     # Step 1: Feature extraction
     featureextract = "colmap feature_extractor --database_path " + dbfile+ " --image_path " + inputimagefolder + " --SiftExtraction.edge_threshold 30" + " --SiftExtraction.peak_threshold 0.004"
     if not run_colmap_command(featureextract, "Feature extraction"):
-        sys.exit(1)
+        print(" GPU feature extraction failed, trying CPU-only mode...")
+        # Fallback to CPU-only feature extraction
+        featureextract_cpu = "colmap feature_extractor --database_path " + dbfile+ " --image_path " + inputimagefolder + " --SiftExtraction.edge_threshold 30" + " --SiftExtraction.peak_threshold 0.004" + " --SiftExtraction.use_gpu 0"
+        if not run_colmap_command(featureextract_cpu, "Feature extraction (CPU-only)"):
+            print(" Both GPU and CPU feature extraction failed")
+            sys.exit(1)
         
     # Step 2: Feature matching
     featurematcher = "colmap exhaustive_matcher --database_path " + dbfile
