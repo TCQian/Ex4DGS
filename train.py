@@ -115,7 +115,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # Pick a random Camera
         if not viewpoint_stack:
-            viewpoint_stack, train_images = scene.getTrainCameras(return_as='generator', shuffle=True)
+            viewpoint_stack, train_images = scene.getTrainCameras(return_as='generator', shuffle=True, n_job=1, job_batch_size=1)
             viewpoint_stack = viewpoint_stack.copy()
                         
             if iteration > opt.prune_invisible_interval:
@@ -314,10 +314,10 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         torch.cuda.empty_cache()
 
         
-        test_viewpoint_stack, test_images = scene.getTestCameras(shuffle=False, return_as='generator',  n_job=1)
+        test_viewpoint_stack, test_images = scene.getTestCameras(shuffle=False, return_as='generator', n_job=1, job_batch_size=1)
         test_viewpoint_stack = test_viewpoint_stack.copy()
         
-        train_viewpoint_stack, train_images = scene.getTrainCameras(shuffle=False, return_as='generator', n_job=1)
+        train_viewpoint_stack, train_images = scene.getTrainCameras(shuffle=False, return_as='generator', n_job=1, job_batch_size=1)
         train_viewpoint_stack = train_viewpoint_stack.copy()
             
         validation_configs = ({'name': 'test', 'cameras': test_viewpoint_stack, 

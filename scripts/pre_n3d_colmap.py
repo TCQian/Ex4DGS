@@ -191,6 +191,12 @@ if __name__ == "__main__" :
     args = parser.parse_args()
     videopath = args.videopath
 
+    # clear existing output
+    colmap_dir = os.path.join(videopath, "colmap_0")
+    if os.path.exists(colmap_dir):
+        print(f"Removing existing colmap directory: {colmap_dir}")
+        shutil.rmtree(colmap_dir)
+        
     startframe = args.startframe
     endframe = args.endframe
     stride = args.stride

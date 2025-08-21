@@ -41,11 +41,11 @@ def render_set(model_path, name, iteration, scene, gaussians, pipeline, backgrou
         makedirs(render_path, exist_ok=True)
     
     if name == "train":
-        viewpoint_stack, images = scene.getTrainCameras(return_as='generator', shuffle=False)
+        viewpoint_stack, images = scene.getTrainCameras(return_as='generator', shuffle=False, n_job=1, job_batch_size=1)
         viewpoint_stack = viewpoint_stack.copy()
         
     else:
-        viewpoint_stack, images = scene.getTestCameras(return_as='generator', shuffle=False)
+        viewpoint_stack, images = scene.getTestCameras(return_as='generator', shuffle=False, n_job=1, job_batch_size=1)
         viewpoint_stack = viewpoint_stack.copy()
         
     idx = 0
