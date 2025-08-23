@@ -99,7 +99,11 @@ def qvec2rotmat(qvec):
 
 
 def getcolmapsinglen3d(folder, offset):
-    os.environ["XDG_RUNTIME_DIR"] = "/tmp/runtime-root"
+    runtime_dir = "/tmp/runtime-root"
+    if not os.path.exists(runtime_dir):
+        os.makedirs(runtime_dir, mode=0o700)
+
+    os.environ["XDG_RUNTIME_DIR"] = runtime_dir
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     folder = os.path.join(folder, "colmap_" + str(offset))
     assert os.path.exists(folder)
