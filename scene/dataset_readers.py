@@ -630,7 +630,19 @@ def readPanopticmeta(datadir: str, json_path: str):
 def readPanopticSportsinfos(datadir, images, eval, args):
     train_cam_infos, scene_radius, mean_center = readPanopticmeta(datadir, "train_meta.json")
     test_cam_infos, _, _ = readPanopticmeta(datadir, "test_meta.json")
-    
+
+    # Align camera near/far planes with the scene scale
+    near = scene_radius * 0.01
+    far = scene_radius * 5.0
+    args.near = near
+    args.far = far
+    for cam_info in train_cam_infos:
+        cam_info.near = near
+        cam_info.far = far
+    for cam_info in test_cam_infos:
+        cam_info.near = near
+        cam_info.far = far
+
     # Subtract mean_center from camera positions before scaling
     for cam_info in train_cam_infos:
         cam_info.T = cam_info.T - mean_center.flatten()
