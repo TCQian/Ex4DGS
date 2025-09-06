@@ -319,7 +319,7 @@ def fetchPly_wt(path):
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
     times = np.vstack([vertices['t']]).T
     colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
-    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T6
+    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
     return BasicPointCloud(points=positions, colors=colors, normals=normals, times=times)
 
 
@@ -616,21 +616,26 @@ def readPanopticmeta(datadir: str, json_path: str):
             fx, fy, cx, cy = K[0,0], K[1,1], K[0,2], K[1,2]
             FovX = focal2fov(fx, meta['w'])
             FovY = focal2fov(fy, meta['h'])
-            # cxr = (cx / meta['w']) - 0.5
-            # cyr = (cy / meta['h']) - 0.5
+            cxr = int((cx / meta['w']) - 0.5)
+            cyr = int((cy / meta['h']) - 0.5)
             # get R and T from w2c_list
             w2c = np.array(w2c_list, dtype=np.float32).reshape(4, 4)
             R = np.transpose(w2c[:3, :3])
             T = w2c[:3, 3]
-            cam_info = CameraInfo2(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image_path=os.path.join(datadir, 'ims', fn), image_name=fn, width=meta['w'], height=meta['h'], near=0.01, far=100, timestamp=t_idx, pose=None, hpdirecitons=None, cxr=0.0, cyr=0.0)
+            cam_info = CameraInfo2(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image_path=os.path.join(datadir, 'ims', fn), image_name=fn, width=meta['w'], height=meta['h'], near=0.01, far=100, timestamp=t_idx, pose=None, hpdirecitons=None, cxr=cxr, cyr=cyr)
             cam_infos.append(cam_info)
 
-    return cam_infos, scene_radius
+    return cam_infos, scene_radius, mean_center
 
 def readPanopticSportsinfos(datadir, images, eval, args):
-    train_cam_infos, scene_radius = readPanopticmeta(datadir, "train_meta.json")
-    test_cam_infos, _ = readPanopticmeta(datadir, "test_meta.json")
-    nerf_normalization = {"radius": scene_radius, "translate": np.zeros(3, dtype=np.float32)}
+    train_cam_infos, scene_radius, mean_center = readPanopticmeta(datadir, "train_meta.json")
+    test_cam_infos, _, _ = readPanopticmeta(datadir, "test_meta.json")
+    
+    # Subtract mean_center from camera positions before scaling
+    for cam_info in train_cam_infos:
+        cam_info.T = cam_info.T - mean_center.flatten()
+    for cam_info in test_cam_infos:
+        cam_info.T = cam_info.T - mean_center.flatten()
 
     ply_path = os.path.join(datadir, "pointd3D.ply")
 
@@ -639,9 +644,24 @@ def readPanopticSportsinfos(datadir, images, eval, args):
     data = np.load(plz_path)["data"]
     xyz = data[:,:3]
     rgb = data[:,3:6]
+    
+    # Apply normalization in a single step: (xyz - mean_center) / scene_radius
+    xyz = (xyz - mean_center.flatten()) / scene_radius
+    
+    # Scale camera positions by scene_radius
+    for cam_info in train_cam_infos:
+        cam_info.T = cam_info.T / scene_radius
+    for cam_info in test_cam_infos:
+        cam_info.T = cam_info.T / scene_radius
+    
     num_pts = xyz.shape[0]
     pcd = BasicPointCloud_pc(points=xyz, colors=rgb)
+    # Store the normalized points in the PLY file
     storePly(ply_path, xyz, rgb)
+    
+    # Set nerf_normalization after scaling
+    nerf_normalization = {"radius": 1.0, "translate": -mean_center.flatten() / scene_radius}
+    
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
