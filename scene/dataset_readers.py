@@ -622,7 +622,7 @@ def readPanopticmeta(datadir: str, json_path: str):
             w2c = np.array(w2c_list, dtype=np.float32).reshape(4, 4)
             R = np.transpose(w2c[:3, :3])
             T = w2c[:3, 3]
-            cam_info = CameraInfo2(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image_path=os.path.join(datadir, 'ims', fn), image_name=fn, width=meta['w'], height=meta['h'], near=0.01, far=100, timestamp=t_idx, pose=None, hpdirecitons=None, cxr=cxr, cyr=cyr)
+            cam_info = CameraInfo2(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image_path=os.path.join(datadir, 'ims', fn), image_name=fn, width=meta['w'], height=meta['h'], near=0.01, far=100, timestamp=t_idx, pose=None, hpdirecitons=None, cxr=float(cxr), cyr=float(cyr))   
             cam_infos.append(cam_info)
 
     return cam_infos, scene_radius, mean_center
