@@ -56,6 +56,12 @@ def getWorld2View2(R, t, translate=np.array([.0, .0, .0]), scale=1.0):
     return (Rt).astype(np.float32)
 
 def getProjectionMatrix(znear, zfar, fovX, fovY):
+    # Convert inputs to Python floats to avoid numpy.float32 issues
+    znear = float(znear)
+    zfar = float(zfar)
+    fovX = float(fovX)
+    fovY = float(fovY)
+    
     tanHalfFovY = math.tan((fovY / 2))
     tanHalfFovX = math.tan((fovX / 2))
 
@@ -84,6 +90,14 @@ def getProjectionMatrixCV(znear, zfar, fovX, fovY, cx=0.0, cy=0.0):
     we use cx cy range -0.5 * 0.5
     
     '''
+    # Convert inputs to Python floats to avoid numpy.float32 issues
+    znear = float(znear)
+    zfar = float(zfar)
+    fovX = float(fovX)
+    fovY = float(fovY)
+    cx = float(cx)
+    cy = float(cy)
+    
     tanHalfFovY = math.tan(fovY / 2)
     tanHalfFovX = math.tan(fovX / 2)
 
