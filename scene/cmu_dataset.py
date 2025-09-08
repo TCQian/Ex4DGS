@@ -80,7 +80,7 @@ class PanopticDataset(Dataset):
         return len(self.entries)
 
     def __getitem__(self, idx):
-        from dataset_readers import CameraInfo2
+        from scene.dataset_readers import CameraInfo2
         from utils.graphics_utils import focal2fov
         e = self.entries[idx]
 
