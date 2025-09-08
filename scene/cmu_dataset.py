@@ -8,7 +8,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 def setup_camera(w, h, k, w2c, near=0.01, far=100):
-    from diff_gaussian_rasterization import GaussianRasterizationSettings as Camera
+    from diff_gaussian_rasterization_df import GaussianRasterizationSettings as Camera
     fx, fy, cx, cy = k[0][0], k[1][1], k[0][2], k[1][2]
     w2c = torch.tensor(w2c).cuda().float()
     cam_center = torch.inverse(w2c)[:3, 3]
