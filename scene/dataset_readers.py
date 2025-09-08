@@ -615,7 +615,8 @@ def readPanopticSportsinfos(datadir, images, eval, args):
     xyz = data[:,:3]
     rgb = data[:,3:6]
     num_pts = xyz.shape[0]
-    pcd = BasicPointCloud(points=xyz, colors=rgb, normals=np.ones((num_pts, 3)))
+    times = data[:,6:7]
+    pcd = BasicPointCloud(points=xyz, colors=rgb, normals=np.ones((num_pts, 3)), times=times)
     storePly(ply_path, xyz, rgb)
     # pcd = fetchPly(ply_path)
     # breakpoint()
