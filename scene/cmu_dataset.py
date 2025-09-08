@@ -3,8 +3,6 @@ import os
 import torch
 
 import numpy as np
-import torchvision.transforms as T
-from PIL import Image
 from torch.utils.data import Dataset
 
 def setup_camera(w, h, k, w2c, near=0.01, far=100):
@@ -73,8 +71,7 @@ class PanopticDataset(Dataset):
                     }
                 )
 
-        # simple PIL→Tensor loader
-        self.transform = T.ToTensor()
+        # Note: Image loading is handled by loadCamVideo, not in the dataset
 
     def __len__(self):
         return len(self.entries)
@@ -83,22 +80,6 @@ class PanopticDataset(Dataset):
         from scene.dataset_readers import CameraInfo2
         from utils.graphics_utils import focal2fov
         e = self.entries[idx]
-
-        # load image on‐the‐fly
-        img_path = os.path.join(self.datadir, "ims", e["fn"])
-        img = Image.open(img_path).convert("RGB")
-        img = self.transform(img)
-
-        # Note: setup_camera is no longer used since we return CameraInfo2 instead
-        # but keeping the logic for potential future use
-        # cam = setup_camera(
-        #     self.w,  # image width
-        #     self.h,  # image height
-        #     e["K"],  # your 3×3 intrinsics matrix
-        #     e["w2c"],  # world-to-camera 4×4
-        #     near=0.01,
-        #     far=100.0,
-        # )
 
         # Extract camera parameters for CameraInfo2
         K = e["K"]
@@ -112,7 +93,10 @@ class PanopticDataset(Dataset):
         FovX = focal2fov(K[0, 0], self.w)
         FovY = focal2fov(K[1, 1], self.h)
         
-        # Create CameraInfo2 instance
+        # Create image path
+        img_path = os.path.join(self.datadir, "ims", e["fn"])
+        
+        # Create CameraInfo2 instance (without loading image - that's handled by loadCamVideo)
         cam_info = CameraInfo2(
             uid=e["cam_id"],
             R=R,
@@ -131,8 +115,4 @@ class PanopticDataset(Dataset):
             cxr=0.0,
             cyr=0.0
         )
-        
-        # Set the image data
-        cam_info.image = img
-
         return cam_info
