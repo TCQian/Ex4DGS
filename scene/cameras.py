@@ -160,6 +160,7 @@ WARNED = False
 
 
 def loadCam(args, id, cam_info, resolution_scale):
+    global WARNED
     orig_w, orig_h = cam_info.image.size
 
     if args.resolution in [1, 2, 4, 8]:
@@ -167,7 +168,6 @@ def loadCam(args, id, cam_info, resolution_scale):
     else:  # should be a type that converts to float
         if args.resolution == -1:
             if orig_w > 1600:
-                global WARNED
                 if not WARNED:
                     print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
                         "If this is not desired, please explicitly specify '--resolution/-r' as 1")
@@ -196,6 +196,7 @@ def loadCam(args, id, cam_info, resolution_scale):
     
 
 def loadCamVideo(args, id, cam_info, resolution_scale):
+    global WARNED
     # Check if this is a CMU Panoptic dataset entry (dictionary with 'camera' key)
     if isinstance(cam_info, dict) and 'camera' in cam_info:
         # Extract data from CMU Panoptic dataset entry
@@ -212,7 +213,6 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
         else:
             if args.resolution == -1:
                 if orig_w > 1600:
-                    global WARNED
                     if not WARNED:
                         print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
                             "If this is not desired, please explicitly specify '--resolution/-r' as 1")
@@ -265,7 +265,6 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
     else:  # should be a type that converts to float
         if args.resolution == -1:
             if orig_w > 1600:
-                global WARNED
                 if not WARNED:
                     print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
                         "If this is not desired, please explicitly specify '--resolution/-r' as 1")
@@ -296,6 +295,7 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
     
 
 def loadCamVideoss(args, id, cam_info, resolution_scale, nogt=False):
+    global WARNED
     orig_w, orig_h = cam_info.width, cam_info.height
 
     if args.resolution in [1, 2, 4, 8]:
@@ -303,7 +303,6 @@ def loadCamVideoss(args, id, cam_info, resolution_scale, nogt=False):
     else:  # should be a type that converts to float
         if args.resolution == -1:
             if orig_w > 1600:
-                global WARNED
                 if not WARNED:
                     print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
                         "If this is not desired, please explicitly specify '--resolution/-r' as 1")
