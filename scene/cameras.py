@@ -398,26 +398,26 @@ def camera_to_JSON(id, camera):
         
         # CMU Panoptic camera format
         # Extract world-to-camera matrix from viewmatrix
-        w2c = cam_obj.viewmatrix.squeeze(0).cpu().numpy()  # Remove batch dimension and convert to numpy
+        w2c = cam_obj.viewmatrix.squeeze(0).detach().cpu().numpy()  # Remove batch dimension and convert to numpy
         
         # Extract camera center (world position)
-        pos = cam_obj.campos.cpu().numpy()
+        pos = cam_obj.campos.detach().cpu().numpy()
         
         # Extract rotation matrix from w2c
         rot = w2c[:3, :3]
         serializable_array_2d = [x.tolist() for x in rot]
         
         # Calculate focal lengths from tanfov
-        fx = cam_obj.image_width / (2 * cam_obj.tanfovx)
-        fy = cam_obj.image_height / (2 * cam_obj.tanfovy)
+        fx = float(cam_obj.image_width / (2 * cam_obj.tanfovx.detach().cpu().item()))
+        fy = float(cam_obj.image_height / (2 * cam_obj.tanfovy.detach().cpu().item()))
         
         camera_entry = {
-            'id': id,
+            'id': int(id),
             'img_name': f'cmu_camera_{cam_id}_t{time}',  # Include cam_id and time for uniqueness
-            'width': cam_obj.image_width,
-            'height': cam_obj.image_height,
-            'position': pos.tolist(),
-            'rotation': serializable_array_2d,
+            'width': int(cam_obj.image_width),
+            'height': int(cam_obj.image_height),
+            'position': [float(x) for x in pos.tolist()],
+            'rotation': [[float(y) for y in x] for x in serializable_array_2d],
             'fy': fy,
             'fx': fx
         }
