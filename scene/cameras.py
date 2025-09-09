@@ -196,6 +196,68 @@ def loadCam(args, id, cam_info, resolution_scale):
     
 
 def loadCamVideo(args, id, cam_info, resolution_scale):
+    # Check if this is a CMU Panoptic dataset entry (dictionary with 'camera' key)
+    if isinstance(cam_info, dict) and 'camera' in cam_info:
+        # Extract data from CMU Panoptic dataset entry
+        cam_obj = cam_info['camera']
+        cam_id = cam_info.get('cam_id', id)
+        time = cam_info.get('time', 0)
+        
+        # Get image dimensions from the camera object
+        orig_w, orig_h = cam_obj.image_width, cam_obj.image_height
+        
+        # Calculate resolution based on args
+        if args.resolution in [1, 2, 4, 8]:
+            resolution = round(orig_w/(resolution_scale * args.resolution)), round(orig_h/(resolution_scale * args.resolution))
+        else:
+            if args.resolution == -1:
+                if orig_w > 1600:
+                    global WARNED
+                    if not WARNED:
+                        print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
+                            "If this is not desired, please explicitly specify '--resolution/-r' as 1")
+                        WARNED = True
+                    global_down = orig_w / 1600
+                else:
+                    global_down = 1
+            else:
+                global_down = orig_w / args.resolution
+            scale = float(global_down) * float(resolution_scale)
+            resolution = (int(orig_w / scale), int(orig_h / scale))
+        
+        # Extract camera parameters from the GaussianRasterizationSettings object
+        w2c = cam_obj.viewmatrix.squeeze(0).cpu().numpy()
+        c2w = np.linalg.inv(w2c)
+        R = c2w[:3, :3].T  # Rotation matrix
+        T = c2w[:3, 3]     # Translation vector
+        
+        # Calculate FOV from tanfov
+        FovX = 2 * np.arctan(orig_w / (2 * cam_obj.image_width / (2 * cam_obj.tanfovx)))
+        FovY = 2 * np.arctan(orig_h / (2 * cam_obj.image_height / (2 * cam_obj.tanfovy)))
+        
+        # Create Cameravideo object
+        return Cameravideo(
+            colmap_id=cam_id, 
+            R=R, 
+            T=T, 
+            FoVx=FovX, 
+            FoVy=FovY, 
+            gt_alpha_mask=None, 
+            image=cam_info.get('image', None),
+            image_name=f'cmu_camera_{cam_id}_t{time}', 
+            image_path=None, 
+            uid=id, 
+            data_device=args.data_device, 
+            near=0.01, 
+            far=100.0, 
+            timestamp=time, 
+            rayo=None, 
+            rayd=None, 
+            cxr=0.0, 
+            cyr=0.0, 
+            resolution=resolution
+        )
+    
     orig_w, orig_h = cam_info.width, cam_info.height
 
     if args.resolution in [1, 2, 4, 8]:
@@ -327,7 +389,41 @@ def cameraList_from_camInfosVideo2(cam_infos, resolution_scale, args, ss=False):
     return camera_list
 
 
-def camera_to_JSON(id, camera : Camera):
+def camera_to_JSON(id, camera):
+    # Check if this is a CMU Panoptic dataset entry (dictionary with 'camera' key)
+    if isinstance(camera, dict) and 'camera' in camera:
+        # Extract the actual camera object from the dictionary
+        cam_obj = camera['camera']
+        cam_id = camera.get('cam_id', id)
+        time = camera.get('time', 0)
+        
+        # CMU Panoptic camera format
+        # Extract world-to-camera matrix from viewmatrix
+        w2c = cam_obj.viewmatrix.squeeze(0).cpu().numpy()  # Remove batch dimension and convert to numpy
+        
+        # Extract camera center (world position)
+        pos = cam_obj.campos.cpu().numpy()
+        
+        # Extract rotation matrix from w2c
+        rot = w2c[:3, :3]
+        serializable_array_2d = [x.tolist() for x in rot]
+        
+        # Calculate focal lengths from tanfov
+        fx = cam_obj.image_width / (2 * cam_obj.tanfovx)
+        fy = cam_obj.image_height / (2 * cam_obj.tanfovy)
+        
+        camera_entry = {
+            'id': id,
+            'img_name': f'cmu_camera_{cam_id}_t{time}',  # Include cam_id and time for uniqueness
+            'width': cam_obj.image_width,
+            'height': cam_obj.image_height,
+            'position': pos.tolist(),
+            'rotation': serializable_array_2d,
+            'fy': fy,
+            'fx': fx
+        }
+        return camera_entry
+    
     Rt = np.zeros((4, 4))
     Rt[:3, :3] = camera.R.transpose()
     Rt[:3, 3] = camera.T

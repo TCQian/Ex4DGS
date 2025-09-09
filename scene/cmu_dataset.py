@@ -3,6 +3,8 @@ import os
 import torch
 
 import numpy as np
+import torchvision.transforms as T
+from PIL import Image
 from torch.utils.data import Dataset
 
 def setup_camera(w, h, k, w2c, near=0.01, far=100):
@@ -71,48 +73,28 @@ class PanopticDataset(Dataset):
                     }
                 )
 
-        # Note: Image loading is handled by loadCamVideo, not in the dataset
+        # simple PIL→Tensor loader
+        self.transform = T.ToTensor()
 
     def __len__(self):
         return len(self.entries)
 
     def __getitem__(self, idx):
-        from scene.dataset_readers import CameraInfo2
-        from utils.graphics_utils import focal2fov
         e = self.entries[idx]
 
-        # Extract camera parameters for CameraInfo2
-        K = e["K"]
-        w2c = e["w2c"]
-        
-        # Convert w2c to R and T
-        R = w2c[:3, :3].T  # R is stored transposed due to 'glm' in CUDA code
-        T = w2c[:3, 3]
-        
-        # Calculate FOV from intrinsics
-        FovX = focal2fov(K[0, 0], self.w)
-        FovY = focal2fov(K[1, 1], self.h)
-        
-        # Create image path
+        # load image on‐the‐fly
         img_path = os.path.join(self.datadir, "ims", e["fn"])
-        
-        # Create CameraInfo2 instance (without loading image - that's handled by loadCamVideo)
-        cam_info = CameraInfo2(
-            uid=e["cam_id"],
-            R=R,
-            T=T,
-            FovY=FovY,
-            FovX=FovX,
-            image_path=img_path,
-            image_name=e["fn"],
-            width=self.w,
-            height=self.h,
+        img = Image.open(img_path).convert("RGB")
+        img = self.transform(img)
+
+        # build camera; pass K and w2c positionally, not as 'K='
+        cam = setup_camera(
+            self.w,  # image width
+            self.h,  # image height
+            e["K"],  # your 3×3 intrinsics matrix
+            e["w2c"],  # world-to-camera 4×4
             near=0.01,
             far=100.0,
-            timestamp=e["time"],
-            pose=None,
-            hpdirecitons=None,
-            cxr=0.0,
-            cyr=0.0
         )
-        return cam_info
+
+        return {"camera": cam, "image": img, "time": e["time"], "cam_id": e["cam_id"]}
