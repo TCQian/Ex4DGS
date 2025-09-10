@@ -579,7 +579,7 @@ def readColmapSceneInfoNeural3DVideo(path, images, eval, args):
     return scene_info
 
 
-def readPanopticmeta(datadir: str, json_path: str):
+def readPanopticmeta(datadir: str, json_path: str, args):
     # --- 1) load just the JSON to compute scene radius ---
     meta_file = os.path.join(datadir, json_path)
     with open(meta_file, "r") as f:
@@ -594,14 +594,14 @@ def readPanopticmeta(datadir: str, json_path: str):
 
     # --- 2) build on-the-fly dataset ---
     from scene.cmu_dataset import PanopticDataset
-    dataset = PanopticDataset(datadir, json_path)
+    dataset = PanopticDataset(datadir, json_path, args.lazy_loader)
 
     # --- 3) return dataset instead of full cam_infos list ---
     return dataset, dataset.max_time, scene_radius
 
 def readPanopticSportsinfos(datadir, images, eval, args):
-    train_cam_infos, max_time, scene_radius = readPanopticmeta(datadir, "train_meta.json")
-    test_cam_infos,_, _ = readPanopticmeta(datadir, "test_meta.json")
+    train_cam_infos, max_time, scene_radius = readPanopticmeta(datadir, "train_meta.json", args)
+    test_cam_infos,_, _ = readPanopticmeta(datadir, "test_meta.json", args)
     nerf_normalization = {
         "radius":scene_radius,
         "translate":torch.tensor([0,0,0])

@@ -35,7 +35,7 @@ def setup_camera(w, h, k, w2c, near=0.01, far=100):
     return cam
 
 class PanopticDataset(Dataset):
-    def __init__(self, datadir: str, json_path: str):
+    def __init__(self, datadir: str, json_path: str, lazy_loader: bool = False):
         # --- load metadata once ---
         meta_file = os.path.join(datadir, json_path)
         with open(meta_file, "r") as f:
@@ -46,6 +46,7 @@ class PanopticDataset(Dataset):
         self.h = meta["h"]
         self.max_time = len(meta["fn"])
         self.entries = []
+        self.lazy_loader = lazy_loader
 
         # flatten (time × camera) into a single list
         for t_idx in range(self.max_time):
@@ -76,10 +77,29 @@ class PanopticDataset(Dataset):
         # simple PIL→Tensor loader
         self.transform = T.ToTensor()
 
+    def get_metadata(self, idx):
+        e = self.entries[idx]
+        img_path = os.path.join(self.datadir, "ims", e["fn"])
+        
+        # build camera; pass K and w2c positionally, not as 'K='
+        cam = setup_camera(
+            self.w,  # image width
+            self.h,  # image height
+            e["K"],  # your 3×3 intrinsics matrix
+            e["w2c"],  # world-to-camera 4×4
+            near=0.01,
+            far=100.0,
+        )
+        
+        return {"camera": cam, "path": img_path, "time": e["time"], "cam_id": e["cam_id"]}
+
     def __len__(self):
         return len(self.entries)
 
     def __getitem__(self, idx):
+        if self.lazy_loader:
+            return self.get_metadata(idx)
+
         e = self.entries[idx]
 
         # load image on‐the‐fly

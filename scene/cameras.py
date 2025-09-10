@@ -203,6 +203,7 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
         cam_obj = cam_info['camera']
         cam_id = cam_info.get('cam_id', id)
         time = cam_info.get('time', 0)
+        image_path = cam_info.get('path', None)
         
         # Get image dimensions from the camera object
         orig_w, orig_h = cam_obj.image_width, cam_obj.image_height
@@ -245,7 +246,7 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
             gt_alpha_mask=None, 
             image=cam_info.get('image', None),
             image_name=f'cmu_camera_{cam_id}_t{time}', 
-            image_path=None, 
+            image_path=image_path, 
             uid=id, 
             data_device=args.data_device, 
             near=0.01, 
