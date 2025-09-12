@@ -220,8 +220,25 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
             scale = float(global_down) * float(resolution_scale)
             resolution = (int(orig_w / scale), int(orig_h / scale))
 
-        cam_info.resolution = resolution
-        return cam_info
+        return CMUCamera(
+            image_height=cam_info.image_height,
+            image_width=cam_info.image_width,
+            tanfovx=cam_info.tanfovx,
+            tanfovy=cam_info.tanfovy,
+            bg=cam_info.bg,
+            scale_modifier=cam_info.scale_modifier,
+            viewmatrix=cam_info.viewmatrix,
+            projmatrix=cam_info.projmatrix,
+            sh_degree=cam_info.sh_degree,
+            campos=cam_info.campos,
+            prefiltered=cam_info.prefiltered,
+            debug=cam_info.debug,
+            timestamp=cam_info.timestamp,
+            colmap_id=cam_info.colmap_id,
+            image_path=cam_info.image_path,
+            resolution=resolution,
+            im_scale=cam_info.im_scale
+        )
     
     orig_w, orig_h = cam_info.width, cam_info.height
 
