@@ -199,7 +199,7 @@ def loadCam(args, id, cam_info, resolution_scale):
 def loadCamVideo(args, id, cam_info, resolution_scale):
     global WARNED
     # Check if this is a CMU Panoptic dataset entry (dictionary with 'camera' key)
-    if isinstance(cam_info, dict) and 'camera' in cam_info:
+    if isinstance(cam_info, CMUCamera):
         return cam_info
     
     orig_w, orig_h = cam_info.width, cam_info.height
