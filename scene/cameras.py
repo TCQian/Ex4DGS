@@ -237,7 +237,8 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
             colmap_id=cam_info.colmap_id,
             image_path=cam_info.image_path,
             resolution=resolution,
-            im_scale=cam_info.im_scale
+            im_scale=cam_info.im_scale,
+            T=cam_info.T
         )
     
     orig_w, orig_h = cam_info.width, cam_info.height
