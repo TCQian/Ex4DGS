@@ -221,8 +221,8 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
             resolution = (int(orig_w / scale), int(orig_h / scale))
 
         return CMUCamera(
-            image_height=cam_info.image_height,
-            image_width=cam_info.image_width,
+            image_height=resolution[1],
+            image_width=resolution[0],
             tanfovx=cam_info.tanfovx,
             tanfovy=cam_info.tanfovy,
             bg=cam_info.bg,
