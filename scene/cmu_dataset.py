@@ -30,11 +30,13 @@ class CMUCamera(NamedTuple):
     image_path: str
     resolution: tuple[int, int]
     im_scale: float
+    T: np.ndarray # translation matrix
 
 def setup_camera(w, h, k, w2c, timestamp, cam_id, image_path, near=0.01, far=100):
     fx, fy, cx, cy = k[0][0], k[1][1], k[0][2], k[1][2]
     w2c = torch.tensor(w2c).cuda().float()
     cam_center = torch.inverse(w2c)[:3, 3]
+    T = cam_center.cpu().numpy()
     w2c = w2c.unsqueeze(0).transpose(1, 2)
     opengl_proj = torch.tensor([[2 * fx / w, 0.0, -(w - 2 * cx) / w, 0.0],
                                 [0.0, 2 * fy / h, -(h - 2 * cy) / h, 0.0],
@@ -58,7 +60,8 @@ def setup_camera(w, h, k, w2c, timestamp, cam_id, image_path, near=0.01, far=100
         colmap_id=cam_id,
         image_path=image_path,
         resolution=(w, h),
-        im_scale=1.0
+        im_scale=1.0,
+        T=T
     )
     return cam
 
