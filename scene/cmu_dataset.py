@@ -26,7 +26,7 @@ class CMUCamera(NamedTuple):
 
     # for cmu panoptic dataset
     timestamp : float
-    cam_id : int
+    colmap_id : int
     image_path: str
 
 def setup_camera(w, h, k, w2c, timestamp, cam_id, image_path, near=0.01, far=100):
@@ -53,7 +53,7 @@ def setup_camera(w, h, k, w2c, timestamp, cam_id, image_path, near=0.01, far=100
         prefiltered=False,
         debug=True,
         timestamp=timestamp,
-        cam_id=cam_id,
+        colmap_id=cam_id,
         image_path=image_path
     )
     return cam

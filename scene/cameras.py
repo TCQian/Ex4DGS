@@ -352,7 +352,7 @@ def camera_to_JSON(id, camera):
         
         camera_entry = {
             'id': int(id), 
-            'img_name': f'cmu_camera_{camera.cam_id}_t{camera.timestamp}',
+            'img_name': f'cmu_camera_{camera.colmap_id}_t{camera.timestamp}',
             'width': int(camera.image_width),
             'height': int(camera.image_height),
             'position': pos.tolist(),
