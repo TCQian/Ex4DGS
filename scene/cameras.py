@@ -200,6 +200,27 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
     global WARNED
     # Check if this is a CMU Panoptic dataset entry (dictionary with 'camera' key)
     if isinstance(cam_info, CMUCamera):
+        orig_w, orig_h = cam_info.image_width, cam_info.image_height
+
+        if args.resolution in [1, 2, 4, 8]:
+            resolution = round(orig_w/(resolution_scale * args.resolution)),  round(orig_h/(resolution_scale * args.resolution))
+        else:  # should be a type that converts to float
+            if args.resolution == -1:
+                if orig_w > 1600:
+                    if not WARNED:
+                        print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
+                            "If this is not desired, please explicitly specify '--resolution/-r' as 1")
+                        WARNED = True
+                    global_down = orig_w / 1600
+                else:
+                    global_down = 1
+            else:
+                global_down = orig_w / args.resolution
+
+            scale = float(global_down) * float(resolution_scale)
+            resolution = (int(orig_w / scale), int(orig_h / scale))
+
+        cam_info.resolution = resolution
         return cam_info
     
     orig_w, orig_h = cam_info.width, cam_info.height

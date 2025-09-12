@@ -28,6 +28,8 @@ class CMUCamera(NamedTuple):
     timestamp : float
     colmap_id : int
     image_path: str
+    resolution: tuple[int, int]
+    im_scale: float
 
 def setup_camera(w, h, k, w2c, timestamp, cam_id, image_path, near=0.01, far=100):
     fx, fy, cx, cy = k[0][0], k[1][1], k[0][2], k[1][2]
@@ -54,7 +56,9 @@ def setup_camera(w, h, k, w2c, timestamp, cam_id, image_path, near=0.01, far=100
         debug=True,
         timestamp=timestamp,
         colmap_id=cam_id,
-        image_path=image_path
+        image_path=image_path,
+        resolution=(w, h),
+        im_scale=1.0
     )
     return cam
 
