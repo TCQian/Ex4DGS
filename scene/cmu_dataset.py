@@ -1,14 +1,36 @@
 import json
 import os
-import torch
+from typing import NamedTuple
 
 import numpy as np
+import torch
 import torchvision.transforms as T
 from PIL import Image
 from torch.utils.data import Dataset
 
-def setup_camera(w, h, k, w2c, near=0.01, far=100):
-    from diff_gaussian_rasterization import GaussianRasterizationSettings as Camera
+
+class CMUCamera(NamedTuple):
+    # same as diff_gaussian_rasterization_df
+    image_height: int
+    image_width: int 
+    tanfovx : float
+    tanfovy : float
+    bg : torch.Tensor
+    scale_modifier : float
+    viewmatrix : torch.Tensor
+    projmatrix : torch.Tensor
+    sh_degree : int
+    campos : torch.Tensor
+    prefiltered : bool
+    computer_xyz : bool
+    debug : bool
+
+    # for cmu panoptic dataset
+    timestamp : float
+    cam_id : int
+    image_path: str
+
+def setup_camera(w, h, k, w2c, timestamp, cam_id, image_path, near=0.01, far=100):
     fx, fy, cx, cy = k[0][0], k[1][1], k[0][2], k[1][2]
     w2c = torch.tensor(w2c).cuda().float()
     cam_center = torch.inverse(w2c)[:3, 3]
@@ -18,7 +40,7 @@ def setup_camera(w, h, k, w2c, near=0.01, far=100):
                                 [0.0, 0.0, far / (far - near), -(far * near) / (far - near)],
                                 [0.0, 0.0, 1.0, 0.0]]).cuda().float().unsqueeze(0).transpose(1, 2)
     full_proj = w2c.bmm(opengl_proj)
-    cam = Camera(
+    cam = CMUCamera(
         image_height=h,
         image_width=w,
         tanfovx=w / (2 * fx),
@@ -30,7 +52,10 @@ def setup_camera(w, h, k, w2c, near=0.01, far=100):
         sh_degree=0,
         campos=cam_center,
         prefiltered=False,
-        debug=True
+        debug=True,
+        timestamp=timestamp,
+        cam_id=cam_id,
+        image_path=image_path
     )
     return cam
 
@@ -87,11 +112,13 @@ class PanopticDataset(Dataset):
             self.h,  # image height
             e["K"],  # your 3×3 intrinsics matrix
             e["w2c"],  # world-to-camera 4×4
+            e["time"],
+            e["cam_id"],
+            img_path,
             near=0.01,
             far=100.0,
         )
-        
-        return {"camera": cam, "path": img_path, "time": e["time"], "cam_id": e["cam_id"]}
+        return cam
 
     def __len__(self):
         return len(self.entries)
@@ -113,8 +140,11 @@ class PanopticDataset(Dataset):
             self.h,  # image height
             e["K"],  # your 3×3 intrinsics matrix
             e["w2c"],  # world-to-camera 4×4
+            e["time"],
+            e["cam_id"],
+            img_path,
             near=0.01,
             far=100.0,
         )
 
-        return {"camera": cam, "image": img, "time": e["time"], "cam_id": e["cam_id"]}
+        return cam

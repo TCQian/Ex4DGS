@@ -11,8 +11,9 @@
 import math
 
 import torch
-from torch.nn import functional as F
 from diff_gaussian_rasterization_df import GaussianRasterizationSettings, GaussianRasterizer
+from scene.cmu_dataset import CMUCamera
+from torch.nn import functional as F
 from utils.sh_utils import eval_sh
 
 
@@ -38,24 +39,44 @@ def render(viewpoint_camera, pc, pipe, bg_color : torch.Tensor, timestamp=None, 
     if subpixel_offset is None:
         subpixel_offset = torch.zeros((int(viewpoint_camera.image_height), int(viewpoint_camera.image_width), 2), dtype=torch.float32, device="cuda")
 
-    raster_settings = GaussianRasterizationSettings(
-        image_height=int(viewpoint_camera.image_height),
-        image_width=int(viewpoint_camera.image_width),
-        tanfovx=tanfovx,
-        tanfovy=tanfovy,
-        kernel_size=pc.kernel_size,
-        subpixel_offset=subpixel_offset,
-        bg=bg_color,
-        scale_modifier=scaling_modifier,
-        viewmatrix=viewpoint_camera.world_view_transform,
-        projmatrix=viewpoint_camera.full_proj_transform,
-        sh_degree=pc.active_sh_degree,
-        campos=viewpoint_camera.camera_center,
-        prefiltered=False,
-        min_depth=near,
-        max_depth=far,
-        debug=pipe.debug
-    )
+    if isinstance(viewpoint_camera, CMUCamera):
+        raster_settings = GaussianRasterizationSettings(
+            image_height=int(viewpoint_camera.image_height),
+            image_width=int(viewpoint_camera.image_width),
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            kernel_size=pc.kernel_size,
+            subpixel_offset=subpixel_offset,
+            bg=bg_color,
+            scale_modifier=scaling_modifier,
+            viewmatrix=viewpoint_camera.viewmatrix,
+            projmatrix=viewpoint_camera.projmatrix,
+            sh_degree=pc.active_sh_degree,
+            campos=viewpoint_camera.campos,
+            prefiltered=viewpoint_camera.prefiltered,
+            min_depth=near,
+            max_depth=far,
+            debug=pipe.debug
+        )
+    else:
+        raster_settings = GaussianRasterizationSettings(
+            image_height=int(viewpoint_camera.image_height),
+            image_width=int(viewpoint_camera.image_width),
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            kernel_size=pc.kernel_size,
+            subpixel_offset=subpixel_offset,
+            bg=bg_color,
+            scale_modifier=scaling_modifier,
+            viewmatrix=viewpoint_camera.world_view_transform,
+            projmatrix=viewpoint_camera.full_proj_transform,
+            sh_degree=pc.active_sh_degree,
+            campos=viewpoint_camera.camera_center,
+            prefiltered=False,
+            min_depth=near,
+            max_depth=far,
+            debug=pipe.debug
+        )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
