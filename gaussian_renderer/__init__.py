@@ -33,8 +33,12 @@ def render(viewpoint_camera, pc, pipe, bg_color : torch.Tensor, timestamp=None, 
         pass
         
     # Set up rasterization configuration
-    tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
-    tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
+    if isinstance(viewpoint_camera, CMUCamera):
+        tanfovx = viewpoint_camera.tanfovx
+        tanfovy = viewpoint_camera.tanfovy
+    else:
+        tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
+        tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
     if subpixel_offset is None:
         subpixel_offset = torch.zeros((int(viewpoint_camera.image_height), int(viewpoint_camera.image_width), 2), dtype=torch.float32, device="cuda")
