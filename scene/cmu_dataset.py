@@ -22,7 +22,6 @@ class CMUCamera(NamedTuple):
     sh_degree : int
     campos : torch.Tensor
     prefiltered : bool
-    computer_xyz : bool
     debug : bool
 
     # for cmu panoptic dataset
