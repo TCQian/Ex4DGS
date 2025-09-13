@@ -31,6 +31,7 @@ class CMUCamera(NamedTuple):
     resolution: tuple[int, int]
     im_scale: float
     T: np.ndarray # translation matrix
+    image_name: str
 
 def setup_camera(w, h, k, w2c, timestamp, cam_id, image_path, near=0.01, far=100):
     fx, fy, cx, cy = k[0][0], k[1][1], k[0][2], k[1][2]
@@ -61,7 +62,8 @@ def setup_camera(w, h, k, w2c, timestamp, cam_id, image_path, near=0.01, far=100
         image_path=image_path,
         resolution=(w, h),
         im_scale=1.0,
-        T=T
+        T=T,
+        image_name=f'{timestamp}_{cam_id}'
     )
     return cam
 
