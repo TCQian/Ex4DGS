@@ -63,7 +63,7 @@ def setup_camera(w, h, k, w2c, timestamp, cam_id, image_path, near=0.01, far=100
         resolution=(w, h),
         im_scale=1.0,
         T=T,
-        image_name=f'{timestamp}_{cam_id}'
+        image_name=image_path
     )
     return cam
 
