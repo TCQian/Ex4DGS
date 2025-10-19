@@ -14,6 +14,7 @@ import json
 import sys
 import uuid
 import math
+import time
 from random import randint
 import gc
 
@@ -88,6 +89,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
+    
+    # Record training start time
+    training_start_time = time.time()
     
     for iteration in range(first_iter, opt.iterations + 1):        
         if network_gui.conn == None:
@@ -280,6 +284,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.extract_dynamic_points_from_static(torch.tensor(viewpoint_cam.T).unsqueeze(0), viewpoint_cam.timestamp, 
                                                              static_vis_filter, scene.cameras_extent, percentile=opt.extract_percentile, max_dur=sample_len)
                 mark_extract = False
+
+    # Calculate and print total training time
+    training_end_time = time.time()
+    total_training_time = training_end_time - training_start_time
+    hours = int(total_training_time // 3600)
+    minutes = int((total_training_time % 3600) // 60)
+    seconds = int(total_training_time % 60)
+    
+    print(f"\n{'='*50}")
+    print(f"TRAINING COMPLETED")
+    print(f"{'='*50}")
+    print(f"Total training time: {hours:02d}:{minutes:02d}:{seconds:02d} ({total_training_time:.2f} seconds)")
+    print(f"Total iterations: {opt.iterations}")
+    print(f"Average time per iteration: {total_training_time/opt.iterations:.4f} seconds")
+    print(f"{'='*50}")
 
 
 def prepare_output_and_logger(args):    
