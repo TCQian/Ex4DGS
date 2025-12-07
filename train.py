@@ -19,6 +19,7 @@ from random import randint
 import gc
 
 import torch
+import torchvision
 from tqdm import tqdm
 from PIL import Image
 import joblib
@@ -192,6 +193,38 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             # Log and save
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, (pipe, background), dataset.near, dataset.far)
+            
+            # Render static and dynamic points separately for visualization
+            if iteration % 1000 == 0:  # Every 1000 iterations
+                torch.cuda.empty_cache()
+                test_viewpoint_stack, test_images = scene.getTestCameras(shuffle=False, return_as='generator', n_job=1, job_batch_size=1)
+                test_viewpoint_stack = test_viewpoint_stack.copy()
+                
+                if len(test_viewpoint_stack) > 0:
+                    # Get first test camera
+                    first_test_cam = test_viewpoint_stack[0]
+                    _ = next(test_images)  # Skip the image generator to get to first image
+                    
+                    # Create output folder for visualizations
+                    vis_dir = os.path.join(scene.model_path, "static_dynamic_vis")
+                    os.makedirs(vis_dir, exist_ok=True)
+                    
+                    # Render static points only (mode=1)
+                    static_rend_pkg = render(first_test_cam, gaussians, pipe, background, mode=1, near=dataset.near, far=dataset.far)
+                    static_image = torch.clamp(static_rend_pkg["render"], 0.0, 1.0)
+                    static_path = os.path.join(vis_dir, f"static_iter_{iteration:06d}.png")
+                    torchvision.utils.save_image(static_image, static_path)
+                    
+                    # Render dynamic points only (mode=2) if they exist
+                    if gaussians._xyz_motion.shape[0] > 0:
+                        dynamic_rend_pkg = render(first_test_cam, gaussians, pipe, background, mode=2, near=dataset.near, far=dataset.far)
+                        dynamic_image = torch.clamp(dynamic_rend_pkg["render"], 0.0, 1.0)
+                        dynamic_path = os.path.join(vis_dir, f"dynamic_iter_{iteration:06d}.png")
+                        torchvision.utils.save_image(dynamic_image, dynamic_path)
+                    
+                    print(f"\n[ITER {iteration}] Saved static/dynamic visualizations to {vis_dir}")
+                    torch.cuda.empty_cache()
+            
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
