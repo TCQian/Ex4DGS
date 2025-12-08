@@ -146,7 +146,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # Loss
         Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        Lssim = 1.0 - ssim(image, gt_image)
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * Lssim
+        
+        # Track loss components for logging
+        loss_components = {
+            'l1': Ll1.item(),
+            'ssim': Lssim.item(),
+            'static_reg': 0.0,
+            'motion_reg': 0.0,
+            'rot_reg': 0.0
+        }
         
         # backtrack register
         if opt.l1_accum:
@@ -158,18 +168,24 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 
         # Regularization
         if opt.static_reg > 0 and iteration > opt.progressive_growing_steps + opt.make_dynamic_interval:
-            loss += opt.static_reg * torch.log(gaussians._xyz_disp.norm(dim=-1)+0.001).mean()
+            static_reg_loss = opt.static_reg * torch.log(gaussians._xyz_disp.norm(dim=-1)+0.001).mean()
+            loss += static_reg_loss
+            loss_components['static_reg'] = static_reg_loss.item()
 
         if opt.motion_reg > 0 and iteration > opt.progressive_growing_steps * opt.extract_every + opt.make_dynamic_interval and gaussians._xyz_motion.shape[0] > 0:
             diff1 = (gaussians._xyz_motion[:, :1] - gaussians._xyz_motion[:, 1:])
-            loss += opt.motion_reg * diff1.norm(dim=-1).mean()
+            motion_reg_loss = opt.motion_reg * diff1.norm(dim=-1).mean()
+            loss += motion_reg_loss
+            loss_components['motion_reg'] = motion_reg_loss.item()
             
         if opt.rot_reg > 0 and iteration > opt.progressive_growing_steps * opt.extract_every + opt.make_dynamic_interval and gaussians._xyz_motion.shape[0] > 0:
             r1 = gaussians._rotation_motion[:, 1:] 
             r2 = gaussians._rotation_motion[:, :-1]
             
             r_i = 1 - (r1 * r2).sum(dim=-1) / r1.norm(dim=-1).clamp_min(1e-6) / r2.norm(dim=-1).clamp_min(1e-6)
-            loss += opt.rot_reg * r_i.mean()
+            rot_reg_loss = opt.rot_reg * r_i.mean()
+            loss += rot_reg_loss
+            loss_components['rot_reg'] = rot_reg_loss.item()
             
         loss.backward()
         
@@ -185,13 +201,28 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             ema_loss_for_log = loss.item()
             psnr_log = psnr(image.unsqueeze(0), gt_image.unsqueeze(0)).mean().item()
             if iteration % 10 == 0:
-                progress_bar.set_postfix({"PSNR": f"{psnr_log:.{2}f}", "Loss": f"{ema_loss_for_log:.{6}f}"})
+                # Build loss breakdown string for progress bar
+                loss_breakdown_str = f"L1:{loss_components['l1']:.4f}"
+                if loss_components['ssim'] > 0:
+                    loss_breakdown_str += f" SSIM:{loss_components['ssim']:.4f}"
+                if loss_components['static_reg'] > 0:
+                    loss_breakdown_str += f" SReg:{loss_components['static_reg']:.5f}"
+                if loss_components['motion_reg'] > 0:
+                    loss_breakdown_str += f" MReg:{loss_components['motion_reg']:.5f}"
+                if loss_components['rot_reg'] > 0:
+                    loss_breakdown_str += f" RReg:{loss_components['rot_reg']:.5f}"
+                
+                progress_bar.set_postfix({
+                    "PSNR": f"{psnr_log:.{2}f}", 
+                    "Loss": f"{ema_loss_for_log:.{6}f}",
+                    "Breakdown": loss_breakdown_str
+                })
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, (pipe, background), dataset.near, dataset.far)
+            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, (pipe, background), dataset.near, dataset.far, loss_components)
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
@@ -322,11 +353,18 @@ def prepare_output_and_logger(args):
     return tb_writer
 
 
-def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderArgs, near, far):
+def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderArgs, near, far, loss_components=None):
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
         tb_writer.add_scalar('iter_time', elapsed, iteration)
+        
+        # Log loss breakdown components to tensorboard
+        if loss_components is not None:
+            tb_writer.add_scalar('train_loss_patches/ssim_loss', loss_components.get('ssim', 0.0), iteration)
+            tb_writer.add_scalar('train_loss_patches/static_reg', loss_components.get('static_reg', 0.0), iteration)
+            tb_writer.add_scalar('train_loss_patches/motion_reg', loss_components.get('motion_reg', 0.0), iteration)
+            tb_writer.add_scalar('train_loss_patches/rot_reg', loss_components.get('rot_reg', 0.0), iteration)
         
     # Report test and samples of training set
     if iteration in testing_iterations:
