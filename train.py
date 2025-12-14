@@ -27,9 +27,11 @@ import numpy as np
 
 from gaussian_renderer import render, network_gui
 from scene import Scene, getmodel
+from scene.cmu_dataset import CMUCamera
 from utils.image_utils import psnr
 from utils.loss_utils import l1_loss, ssim
 from utils.general_utils import safe_state, PILtoTorch
+from utils.graphics_utils import getWorld2View2
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
@@ -220,13 +222,64 @@ def analyze_gaussian_density_and_distance(gaussians, test_cam, iteration, image_
     print(f"{'='*80}")
     
     test_timestamp = test_cam.timestamp
-    # Get camera center (could be tensor or numpy array)
-    if isinstance(test_cam.camera_center, torch.Tensor):
-        test_cam_pos = test_cam.camera_center.clone().detach()
-        if test_cam_pos.device != "cuda":
-            test_cam_pos = test_cam_pos.cuda()
+    # Get camera center - handle both CMU (campos) and N3DV (R, T or camera_center) datasets
+    if isinstance(test_cam, CMUCamera):
+        # CMU dataset uses 'campos'
+        if isinstance(test_cam.campos, torch.Tensor):
+            test_cam_pos = test_cam.campos.clone().detach()
+            if test_cam_pos.device != "cuda":
+                test_cam_pos = test_cam_pos.cuda()
+        else:
+            test_cam_pos = torch.tensor(test_cam.campos, device="cuda", dtype=torch.float32)
     else:
-        test_cam_pos = torch.tensor(test_cam.camera_center, device="cuda", dtype=torch.float32)
+        # N3DV dataset: try camera_center first, then compute from world_view_transform or R, T
+        if hasattr(test_cam, 'camera_center') and test_cam.camera_center is not None:
+            if isinstance(test_cam.camera_center, torch.Tensor):
+                test_cam_pos = test_cam.camera_center.clone().detach()
+                if test_cam_pos.device != "cuda":
+                    test_cam_pos = test_cam_pos.cuda()
+            else:
+                test_cam_pos = torch.tensor(test_cam.camera_center, device="cuda", dtype=torch.float32)
+        elif hasattr(test_cam, 'world_view_transform') and test_cam.world_view_transform is not None:
+            # Compute from world_view_transform (W2C matrix)
+            # Camera center in world coordinates is the inverse of W2C's translation
+            view_inv = torch.inverse(test_cam.world_view_transform)
+            test_cam_pos = view_inv[3, :3]
+            if test_cam_pos.device != "cuda":
+                test_cam_pos = test_cam_pos.cuda()
+        elif hasattr(test_cam, 'R') and hasattr(test_cam, 'T'):
+            # Compute from R and T directly using the same logic as getWorld2View2
+            # R is rotation matrix, T is translation vector
+            R = test_cam.R
+            T = test_cam.T
+            
+            # Get scale and translation if available (defaults from Cameravideo)
+            scale = getattr(test_cam, 'scale', 1.0)
+            trans = getattr(test_cam, 'trans', np.array([0.0, 0.0, 0.0]))
+            
+            # Convert to numpy for getWorld2View2
+            if isinstance(R, torch.Tensor):
+                R_np = R.detach().cpu().numpy()
+            else:
+                R_np = np.array(R)
+                
+            if isinstance(T, torch.Tensor):
+                T_np = T.detach().cpu().numpy()
+            else:
+                T_np = np.array(T)
+                
+            if isinstance(trans, torch.Tensor):
+                trans_np = trans.detach().cpu().numpy()
+            else:
+                trans_np = np.array(trans)
+            
+            # Use getWorld2View2 to compute W2C, then invert to get camera center
+            W2C = getWorld2View2(R_np, T_np, trans_np, scale)
+            C2W = np.linalg.inv(W2C)
+            cam_center_np = C2W[:3, 3]
+            test_cam_pos = torch.tensor(cam_center_np, device="cuda", dtype=torch.float32)
+        else:
+            raise AttributeError(f"Camera object has no way to determine camera center. Available attributes: {[attr for attr in dir(test_cam) if not attr.startswith('_')]}")
     
     # Get Gaussian counts
     static_num = gaussians._xyz.shape[0]
