@@ -17,11 +17,13 @@ import math
 import time
 from random import randint
 import gc
+from itertools import compress
 
 import torch
 from tqdm import tqdm
 from PIL import Image
 import joblib
+import numpy as np
 
 from gaussian_renderer import render, network_gui
 from scene import Scene, getmodel
@@ -38,6 +40,174 @@ except ImportError:
     TENSORBOARD_FOUND = False
 TENSORBOARD_FOUND = False
 torch.set_default_dtype(torch.float32)
+
+
+def verify_gaussians_before_after_expansion(gaussians, test_cam, bg, pipe, dataset, iteration, stage="BEFORE", model_path=None):
+    """
+    Verify Gaussian attributes before/after expansion.
+    Tests rendering of 5th frame of first train camera.
+    Prints attributes of first 3 Gaussians and interpolation details.
+    Saves rendered test image.
+    """
+    print(f"\n{'='*80}")
+    print(f"[ITER {iteration}] VERIFICATION {stage} EXPANSION")
+    print(f"{'='*80}")
+    
+    # Get test timestamp (5th frame)
+    test_timestamp = test_cam.timestamp
+    print(f"Test Camera: ID={test_cam.colmap_id}, Timestamp={test_timestamp}")
+    
+    # Render the test camera
+    with torch.no_grad():
+        render_pkg = render(test_cam, gaussians, pipe, bg, near=dataset.near, far=dataset.far)
+        image = render_pkg["render"]
+        visibility_filter = render_pkg["visibility_filter"]
+        
+        # Save rendered image
+        if model_path is not None:
+            # Create verification directory
+            verify_dir = os.path.join(model_path, "verification_images")
+            os.makedirs(verify_dir, exist_ok=True)
+            
+            # Save rendered image
+            image_np = (torch.clamp(image, 0.0, 1.0).permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+            image_pil = Image.fromarray(image_np)
+            image_filename = f"iter_{iteration:06d}_{stage.lower()}_cam{test_cam.colmap_id}_t{test_timestamp}.png"
+            image_path = os.path.join(verify_dir, image_filename)
+            image_pil.save(image_path)
+            print(f"Saved rendered image: {image_path}")
+            
+            # Try to load and save ground truth image if available
+            gt_saved = False
+            if hasattr(test_cam, 'image_path') and test_cam.image_path and os.path.exists(test_cam.image_path):
+                try:
+                    gt_image_pil = Image.open(test_cam.image_path)
+                    gt_filename = f"iter_{iteration:06d}_{stage.lower()}_cam{test_cam.colmap_id}_t{test_timestamp}_gt.png"
+                    gt_path = os.path.join(verify_dir, gt_filename)
+                    gt_image_pil.save(gt_path)
+                    print(f"Saved ground truth image: {gt_path}")
+                    gt_saved = True
+                except Exception as e:
+                    print(f"Could not save ground truth image from path: {e}")
+            
+            if not gt_saved and hasattr(test_cam, 'image') and test_cam.image is not None:
+                try:
+                    # If image is already loaded as tensor
+                    gt_image = test_cam.image
+                    if isinstance(gt_image, torch.Tensor):
+                        gt_image_np = (torch.clamp(gt_image[:3], 0.0, 1.0).permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                        gt_image_pil = Image.fromarray(gt_image_np)
+                        gt_filename = f"iter_{iteration:06d}_{stage.lower()}_cam{test_cam.colmap_id}_t{test_timestamp}_gt.png"
+                        gt_path = os.path.join(verify_dir, gt_filename)
+                        gt_image_pil.save(gt_path)
+                        print(f"Saved ground truth image: {gt_path}")
+                        gt_saved = True
+                except Exception as e:
+                    print(f"Could not save ground truth image from tensor: {e}")
+            
+            if not gt_saved:
+                # Try to load from scene if lazy loading
+                try:
+                    if hasattr(test_cam, 'image_path') and test_cam.image_path:
+                        from utils.general_utils import PILtoTorch
+                        gt_image_pil = Image.open(test_cam.image_path)
+                        gt_image_tensor = PILtoTorch(gt_image_pil, test_cam.resolution)[:3, ...]
+                        if hasattr(test_cam, 'im_scale'):
+                            gt_image_tensor = gt_image_tensor / test_cam.im_scale
+                        gt_image_np = (torch.clamp(gt_image_tensor, 0.0, 1.0).permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                        gt_image_pil = Image.fromarray(gt_image_np)
+                        gt_filename = f"iter_{iteration:06d}_{stage.lower()}_cam{test_cam.colmap_id}_t{test_timestamp}_gt.png"
+                        gt_path = os.path.join(verify_dir, gt_filename)
+                        gt_image_pil.save(gt_path)
+                        print(f"Saved ground truth image: {gt_path}")
+                except Exception as e:
+                    print(f"Could not load/save ground truth image: {e}")
+        
+        print(f"Rendered image stats: mean={image.mean().item():.4f}, std={image.std().item():.4f}, min={image.min().item():.4f}, max={image.max().item():.4f}")
+        print(f"Visible Gaussians: {visibility_filter.sum().item() if visibility_filter is not None else 0}")
+    
+    # Get number of keyframes before checking dynamic Gaussians
+    num_keyframes = gaussians.keyframe_num if hasattr(gaussians, 'keyframe_num') else 0
+    print(f"\nNumber of keyframes: {num_keyframes}")
+    print(f"Duration: {gaussians.duration}, Interval: {gaussians.interval}")
+    
+    # Print static Gaussians (first 3)
+    static_num = gaussians._xyz.shape[0]
+    print(f"\n{'='*80}")
+    print(f"STATIC GAUSSIANS (showing first 3 of {static_num})")
+    print(f"{'='*80}")
+    
+    num_to_show = min(3, static_num)
+    for i in range(num_to_show):
+        print(f"\n--- Static Gaussian {i} ---")
+        print(f"  Position (xyz): {gaussians._xyz[i].cpu().numpy()}")
+        print(f"  Displacement (xyz_disp): {gaussians._xyz_disp[i].cpu().numpy() if gaussians._xyz_disp.shape[0] > i else 'N/A'}")
+        print(f"  Position at t={test_timestamp}: {gaussians.get_static_xyz_at_t(test_timestamp)[i].cpu().numpy()}")
+        print(f"  Opacity: {gaussians.get_opacity[i].item():.6f}")
+        print(f"  Scaling: {gaussians.get_static_scaling[i].cpu().numpy()}")
+        print(f"  Rotation: {gaussians._rotation[i].cpu().numpy()}")
+    
+    # Print dynamic Gaussians (first 3)
+    dynamic_num = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
+    print(f"\n{'='*80}")
+    print(f"DYNAMIC GAUSSIANS (showing first 3 of {dynamic_num})")
+    print(f"{'='*80}")
+    
+    if dynamic_num > 0:
+        num_to_show = min(3, dynamic_num)
+        for i in range(num_to_show):
+            print(f"\n--- Dynamic Gaussian {i} ---")
+            
+            # Keyframe positions (interpolation inputs)
+            keyframes_xyz = gaussians._xyz_motion[i].cpu().numpy()  # [num_keyframes, 3]
+            print(f"  Keyframe positions (input to interpolation):")
+            for kf_idx in range(keyframes_xyz.shape[0]):
+                print(f"    Keyframe {kf_idx}: {keyframes_xyz[kf_idx]}")
+            
+            # Interpolated position at test_timestamp (output)
+            t = test_timestamp + gaussians.time_shift
+            t_idx = int(t // gaussians.interval)
+            delta_t = (t % gaussians.interval) / gaussians.interval
+            
+            print(f"  Interpolation parameters for t={test_timestamp}:")
+            print(f"    t_idx={t_idx}, delta_t={delta_t:.4f}")
+            
+            # Get interpolated position
+            interp_xyz = gaussians.get_dynamic_xyz_at_t(test_timestamp)[i].cpu().numpy()
+            print(f"  Interpolated position (output): {interp_xyz}")
+            
+            # Keyframe rotations
+            keyframes_rot = gaussians._rotation_motion[i].cpu().numpy()  # [num_keyframes, 4]
+            print(f"  Keyframe rotations (input to interpolation):")
+            for kf_idx in range(keyframes_rot.shape[0]):
+                print(f"    Keyframe {kf_idx}: {keyframes_rot[kf_idx]}")
+            
+            # Interpolated rotation
+            interp_rot = gaussians.get_dynamic_rotation_at_t(test_timestamp)[i].cpu().numpy()
+            print(f"  Interpolated rotation (output): {interp_rot}")
+            
+            # Opacity information
+            base_opacity = gaussians.get_motion_opacity[i].item()
+            opacity_center = gaussians._opacity_duration_center[i].cpu().numpy()
+            opacity_var = gaussians._opacity_duration_var[i].cpu().numpy()
+            
+            print(f"  Opacity window center: {opacity_center}")
+            print(f"  Opacity window variance: {opacity_var}")
+            print(f"  Base opacity: {base_opacity:.6f}")
+            
+            # Opacity at test_timestamp
+            t_normalized = (test_timestamp + gaussians.time_shift) / gaussians.interval
+            opacity_at_t = gaussians.get_motion_opacity_at_t(test_timestamp, training=False)[i].item()
+            print(f"  Opacity at t={test_timestamp} (normalized t={t_normalized:.4f}): {opacity_at_t:.6f}")
+            
+            # Scaling
+            if gaussians._scaling_motion.numel() > 0 and gaussians._scaling_motion.shape[0] > i:
+                scaling = gaussians.get_motion_scaling[i].cpu().numpy()
+                print(f"  Scaling: {scaling}")
+    else:
+        print("  No dynamic Gaussians exist yet.")
+    
+    print(f"\n{'='*80}\n")
 
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, args):
@@ -86,12 +256,51 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     train_images = None
     e_count = args.extract_every
     
+    # Get test camera: 5th frame of first train camera (before shuffle, for consistent testing)
+    test_cam = None
+    test_cam_timestamp = 5  # 5th frame
+    try:
+        # Get all training cameras without shuffle to ensure consistency
+        all_train_cams_list = list(compress(scene.train_cameras[1.0], scene.samplelist))
+        
+        if len(all_train_cams_list) > 0:
+            # Find camera with timestamp closest to 5 (or exactly 5)
+            for cam in all_train_cams_list:
+                if abs(cam.timestamp - test_cam_timestamp) < 0.5:  # Allow small tolerance
+                    test_cam = cam
+                    break
+            # If not found, use first camera with timestamp >= 5
+            if test_cam is None:
+                for cam in all_train_cams_list:
+                    if cam.timestamp >= test_cam_timestamp:
+                        test_cam = cam
+                        break
+            # If still not found, use first camera
+            if test_cam is None:
+                test_cam = all_train_cams_list[0] if len(all_train_cams_list) > 0 else None
+            
+            if test_cam is not None:
+                print(f"\n[INIT] Test camera selected: ID={test_cam.colmap_id}, Timestamp={test_cam.timestamp}")
+            else:
+                print(f"\n[WARNING] Could not find test camera with timestamp ~{test_cam_timestamp}")
+        else:
+            print(f"\n[WARNING] No training cameras available for testing")
+    except Exception as e:
+        print(f"\n[WARNING] Error selecting test camera: {e}")
+        test_cam = None
+    
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     
     # Record training start time
     training_start_time = time.time()
+    
+    # Initial verification (before any expansion)
+    if test_cam is not None and first_iter == 1:
+        verify_gaussians_before_after_expansion(
+            gaussians, test_cam, background, pipe, dataset, 0, stage="INITIAL", model_path=args.model_path
+        )
     
     for iteration in range(first_iter, opt.iterations + 1):        
         if network_gui.conn == None:
@@ -264,11 +473,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 
             # increase duration
             if iteration > opt.extract_from_iter and iteration % opt.progressive_growing_steps == 0 and iteration > opt.progressive_growing_steps and ~need_extract:
+                # Verify BEFORE expansion
+                if test_cam is not None:
+                    verify_gaussians_before_after_expansion(
+                        gaussians, test_cam, background, pipe, dataset, iteration, stage="BEFORE", model_path=args.model_path
+                    )
+                
                 sample_len = min(dataset.duration + gaussians.time_shift, int(dataset.time_interval * dataset.progressive_step) + scene.sample_len)
 
                 scene.set_sampling_len(sample_len, sample_every=dataset.sample_every)
                 g_sample_len = min(dataset.duration + gaussians.time_shift, sample_len)
                 expanded = gaussians.expand_duration(g_sample_len)
+                
+                # Verify AFTER expansion
+                if expanded and test_cam is not None:
+                    verify_gaussians_before_after_expansion(
+                        gaussians, test_cam, background, pipe, dataset, iteration, stage="AFTER", model_path=args.model_path
+                    )
                 
                 if expanded:
                     e_count += 1
