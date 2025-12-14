@@ -140,12 +140,12 @@ def verify_gaussians_before_after_expansion(gaussians, test_cam, bg, pipe, datas
     num_to_show = min(3, static_num)
     for i in range(num_to_show):
         print(f"\n--- Static Gaussian {i} ---")
-        print(f"  Position (xyz): {gaussians._xyz[i].cpu().numpy()}")
-        print(f"  Displacement (xyz_disp): {gaussians._xyz_disp[i].cpu().numpy() if gaussians._xyz_disp.shape[0] > i else 'N/A'}")
-        print(f"  Position at t={test_timestamp}: {gaussians.get_static_xyz_at_t(test_timestamp)[i].cpu().numpy()}")
+        print(f"  Position (xyz): {gaussians._xyz[i].detach().cpu().numpy()}")
+        print(f"  Displacement (xyz_disp): {gaussians._xyz_disp[i].detach().cpu().numpy() if gaussians._xyz_disp.shape[0] > i else 'N/A'}")
+        print(f"  Position at t={test_timestamp}: {gaussians.get_static_xyz_at_t(test_timestamp)[i].detach().cpu().numpy()}")
         print(f"  Opacity: {gaussians.get_opacity[i].item():.6f}")
-        print(f"  Scaling: {gaussians.get_static_scaling[i].cpu().numpy()}")
-        print(f"  Rotation: {gaussians._rotation[i].cpu().numpy()}")
+        print(f"  Scaling: {gaussians.get_static_scaling[i].detach().cpu().numpy()}")
+        print(f"  Rotation: {gaussians._rotation[i].detach().cpu().numpy()}")
     
     # Print dynamic Gaussians (first 3)
     dynamic_num = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
@@ -159,7 +159,7 @@ def verify_gaussians_before_after_expansion(gaussians, test_cam, bg, pipe, datas
             print(f"\n--- Dynamic Gaussian {i} ---")
             
             # Keyframe positions (interpolation inputs)
-            keyframes_xyz = gaussians._xyz_motion[i].cpu().numpy()  # [num_keyframes, 3]
+            keyframes_xyz = gaussians._xyz_motion[i].detach().cpu().numpy()  # [num_keyframes, 3]
             print(f"  Keyframe positions (input to interpolation):")
             for kf_idx in range(keyframes_xyz.shape[0]):
                 print(f"    Keyframe {kf_idx}: {keyframes_xyz[kf_idx]}")
@@ -173,23 +173,23 @@ def verify_gaussians_before_after_expansion(gaussians, test_cam, bg, pipe, datas
             print(f"    t_idx={t_idx}, delta_t={delta_t:.4f}")
             
             # Get interpolated position
-            interp_xyz = gaussians.get_dynamic_xyz_at_t(test_timestamp)[i].cpu().numpy()
+            interp_xyz = gaussians.get_dynamic_xyz_at_t(test_timestamp)[i].detach().cpu().numpy()
             print(f"  Interpolated position (output): {interp_xyz}")
             
             # Keyframe rotations
-            keyframes_rot = gaussians._rotation_motion[i].cpu().numpy()  # [num_keyframes, 4]
+            keyframes_rot = gaussians._rotation_motion[i].detach().cpu().numpy()  # [num_keyframes, 4]
             print(f"  Keyframe rotations (input to interpolation):")
             for kf_idx in range(keyframes_rot.shape[0]):
                 print(f"    Keyframe {kf_idx}: {keyframes_rot[kf_idx]}")
             
             # Interpolated rotation
-            interp_rot = gaussians.get_dynamic_rotation_at_t(test_timestamp)[i].cpu().numpy()
+            interp_rot = gaussians.get_dynamic_rotation_at_t(test_timestamp)[i].detach().cpu().numpy()
             print(f"  Interpolated rotation (output): {interp_rot}")
             
             # Opacity information
             base_opacity = gaussians.get_motion_opacity[i].item()
-            opacity_center = gaussians._opacity_duration_center[i].cpu().numpy()
-            opacity_var = gaussians._opacity_duration_var[i].cpu().numpy()
+            opacity_center = gaussians._opacity_duration_center[i].detach().cpu().numpy()
+            opacity_var = gaussians._opacity_duration_var[i].detach().cpu().numpy()
             
             print(f"  Opacity window center: {opacity_center}")
             print(f"  Opacity window variance: {opacity_var}")
@@ -202,12 +202,176 @@ def verify_gaussians_before_after_expansion(gaussians, test_cam, bg, pipe, datas
             
             # Scaling
             if gaussians._scaling_motion.numel() > 0 and gaussians._scaling_motion.shape[0] > i:
-                scaling = gaussians.get_motion_scaling[i].cpu().numpy()
+                scaling = gaussians.get_motion_scaling[i].detach().cpu().numpy()
                 print(f"  Scaling: {scaling}")
     else:
         print("  No dynamic Gaussians exist yet.")
     
     print(f"\n{'='*80}\n")
+
+
+def analyze_gaussian_density_and_distance(gaussians, test_cam, iteration, image_mean, visible_count, model_path=None):
+    """
+    Analyze Gaussian density and distance from test camera to understand dark images.
+    Checks if Gaussians are too sparse or too far away from the test frame.
+    """
+    print(f"\n{'='*80}")
+    print(f"[ITER {iteration}] GAUSSIAN DENSITY & DISTANCE ANALYSIS")
+    print(f"{'='*80}")
+    
+    test_timestamp = test_cam.timestamp
+    # Get camera center (could be tensor or numpy array)
+    if isinstance(test_cam.camera_center, torch.Tensor):
+        test_cam_pos = test_cam.camera_center.clone().detach()
+        if test_cam_pos.device != "cuda":
+            test_cam_pos = test_cam_pos.cuda()
+    else:
+        test_cam_pos = torch.tensor(test_cam.camera_center, device="cuda", dtype=torch.float32)
+    
+    # Get Gaussian counts
+    static_num = gaussians._xyz.shape[0]
+    dynamic_num = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
+    total_gaussians = static_num + dynamic_num
+    
+    print(f"Total Gaussians: {total_gaussians} (Static: {static_num}, Dynamic: {dynamic_num})")
+    print(f"Visible Gaussians: {visible_count} ({100.0*visible_count/total_gaussians if total_gaussians > 0 else 0:.2f}%)")
+    print(f"Image brightness: mean={image_mean:.4f}")
+    
+    # Analyze static Gaussians
+    if static_num > 0:
+        static_positions = gaussians.get_static_xyz_at_t(test_timestamp)  # [N, 3]
+        static_distances = torch.norm(static_positions - test_cam_pos.unsqueeze(0), dim=1)
+        
+        static_mean_dist = static_distances.mean().item()
+        static_min_dist = static_distances.min().item()
+        static_max_dist = static_distances.max().item()
+        static_median_dist = static_distances.median().item()
+        
+        # Count Gaussians within different distance ranges
+        close_threshold = 2.0  # meters
+        medium_threshold = 5.0
+        far_threshold = 10.0
+        
+        static_close = (static_distances < close_threshold).sum().item()
+        static_medium = ((static_distances >= close_threshold) & (static_distances < medium_threshold)).sum().item()
+        static_far = ((static_distances >= medium_threshold) & (static_distances < far_threshold)).sum().item()
+        static_very_far = (static_distances >= far_threshold).sum().item()
+        
+        print(f"\n--- Static Gaussians Distance Analysis ---")
+        print(f"  Mean distance: {static_mean_dist:.4f}m")
+        print(f"  Min distance: {static_min_dist:.4f}m")
+        print(f"  Max distance: {static_max_dist:.4f}m")
+        print(f"  Median distance: {static_median_dist:.4f}m")
+        print(f"  Distance distribution:")
+        print(f"    < {close_threshold}m: {static_close} ({100.0*static_close/static_num:.1f}%)")
+        print(f"    {close_threshold}-{medium_threshold}m: {static_medium} ({100.0*static_medium/static_num:.1f}%)")
+        print(f"    {medium_threshold}-{far_threshold}m: {static_far} ({100.0*static_far/static_num:.1f}%)")
+        print(f"    >= {far_threshold}m: {static_very_far} ({100.0*static_very_far/static_num:.1f}%)")
+        
+        # Check opacity of nearby Gaussians
+        static_opacities = gaussians.get_opacity
+        static_nearby_opacities = static_opacities[static_distances < close_threshold]
+        if static_nearby_opacities.numel() > 0:
+            nearby_mean_opacity = static_nearby_opacities.mean().item()
+            nearby_high_opacity = (static_nearby_opacities > 0.1).sum().item()
+            print(f"  Nearby Gaussians (<{close_threshold}m): {static_nearby_opacities.numel()}")
+            print(f"    Mean opacity: {nearby_mean_opacity:.4f}")
+            print(f"    High opacity (>0.1): {nearby_high_opacity} ({100.0*nearby_high_opacity/static_nearby_opacities.numel():.1f}%)")
+    
+    # Analyze dynamic Gaussians
+    if dynamic_num > 0:
+        dynamic_positions = gaussians.get_dynamic_xyz_at_t(test_timestamp)  # [N, 3]
+        dynamic_distances = torch.norm(dynamic_positions - test_cam_pos.unsqueeze(0), dim=1)
+        
+        dynamic_mean_dist = dynamic_distances.mean().item()
+        dynamic_min_dist = dynamic_distances.min().item()
+        dynamic_max_dist = dynamic_distances.max().item()
+        dynamic_median_dist = dynamic_distances.median().item()
+        
+        dynamic_close = (dynamic_distances < close_threshold).sum().item()
+        dynamic_medium = ((dynamic_distances >= close_threshold) & (dynamic_distances < medium_threshold)).sum().item()
+        dynamic_far = ((dynamic_distances >= medium_threshold) & (dynamic_distances < far_threshold)).sum().item()
+        dynamic_very_far = (dynamic_distances >= far_threshold).sum().item()
+        
+        print(f"\n--- Dynamic Gaussians Distance Analysis ---")
+        print(f"  Mean distance: {dynamic_mean_dist:.4f}m")
+        print(f"  Min distance: {dynamic_min_dist:.4f}m")
+        print(f"  Max distance: {dynamic_max_dist:.4f}m")
+        print(f"  Median distance: {dynamic_median_dist:.4f}m")
+        print(f"  Distance distribution:")
+        print(f"    < {close_threshold}m: {dynamic_close} ({100.0*dynamic_close/dynamic_num:.1f}%)")
+        print(f"    {close_threshold}-{medium_threshold}m: {dynamic_medium} ({100.0*dynamic_medium/dynamic_num:.1f}%)")
+        print(f"    {medium_threshold}-{far_threshold}m: {dynamic_far} ({100.0*dynamic_far/dynamic_num:.1f}%)")
+        print(f"    >= {far_threshold}m: {dynamic_very_far} ({100.0*dynamic_very_far/dynamic_num:.1f}%)")
+        
+        # Check opacity of nearby dynamic Gaussians
+        dynamic_opacities = gaussians.get_motion_opacity_at_t(test_timestamp, training=False)
+        dynamic_nearby_opacities = dynamic_opacities[dynamic_distances < close_threshold]
+        if dynamic_nearby_opacities.numel() > 0:
+            nearby_mean_opacity = dynamic_nearby_opacities.mean().item()
+            nearby_high_opacity = (dynamic_nearby_opacities > 0.1).sum().item()
+            print(f"  Nearby Gaussians (<{close_threshold}m): {dynamic_nearby_opacities.numel()}")
+            print(f"    Mean opacity: {nearby_mean_opacity:.4f}")
+            print(f"    High opacity (>0.1): {nearby_high_opacity} ({100.0*nearby_high_opacity/dynamic_nearby_opacities.numel():.1f}%)")
+    
+    # Combined analysis
+    if static_num > 0 and dynamic_num > 0:
+        all_positions = torch.cat([static_positions, dynamic_positions], dim=0)
+        all_distances = torch.norm(all_positions - test_cam_pos.unsqueeze(0), dim=1)
+        
+        all_close = (all_distances < close_threshold).sum().item()
+        all_medium = ((all_distances >= close_threshold) & (all_distances < medium_threshold)).sum().item()
+        all_far = ((all_distances >= medium_threshold) & (all_distances < far_threshold)).sum().item()
+        all_very_far = (all_distances >= far_threshold).sum().item()
+        
+        print(f"\n--- Combined Analysis ---")
+        print(f"  Total Gaussians < {close_threshold}m: {all_close} ({100.0*all_close/total_gaussians:.1f}%)")
+        print(f"  Total Gaussians {close_threshold}-{medium_threshold}m: {all_medium} ({100.0*all_medium/total_gaussians:.1f}%)")
+        print(f"  Total Gaussians {medium_threshold}-{far_threshold}m: {all_far} ({100.0*all_far/total_gaussians:.1f}%)")
+        print(f"  Total Gaussians >= {far_threshold}m: {all_very_far} ({100.0*all_very_far/total_gaussians:.1f}%)")
+        
+        # Density metric: Gaussians per unit volume near camera
+        volume_near = (4.0/3.0) * math.pi * (close_threshold ** 3)
+        density_near = all_close / volume_near if volume_near > 0 else 0
+        print(f"  Gaussian density near camera (<{close_threshold}m): {density_near:.2f} Gaussians/m³")
+    
+    # Warning flags
+    warnings = []
+    if visible_count < total_gaussians * 0.1:  # Less than 10% visible
+        warnings.append(f"LOW VISIBILITY: Only {100.0*visible_count/total_gaussians:.1f}% Gaussians visible")
+    if image_mean < 0.1:  # Very dark image
+        warnings.append(f"VERY DARK IMAGE: Mean brightness {image_mean:.4f}")
+    if static_num > 0 and dynamic_num > 0:
+        if all_close < total_gaussians * 0.05:  # Less than 5% close
+            warnings.append(f"SPARSE NEAR CAMERA: Only {all_close} Gaussians within {close_threshold}m")
+        if static_mean_dist > 10.0 or (dynamic_num > 0 and dynamic_mean_dist > 10.0):
+            warnings.append(f"GAUSSIANS TOO FAR: Mean distance > 10m")
+    
+    if warnings:
+        print(f"\n⚠️  WARNINGS:")
+        for w in warnings:
+            print(f"  - {w}")
+    else:
+        print(f"\n✓ No major issues detected")
+    
+    print(f"{'='*80}\n")
+    
+    # Save analysis to file
+    if model_path is not None:
+        analysis_dir = os.path.join(model_path, "density_analysis")
+        os.makedirs(analysis_dir, exist_ok=True)
+        analysis_file = os.path.join(analysis_dir, f"iter_{iteration:06d}_analysis.txt")
+        with open(analysis_file, 'w') as f:
+            f.write(f"Iteration: {iteration}\n")
+            f.write(f"Total Gaussians: {total_gaussians} (Static: {static_num}, Dynamic: {dynamic_num})\n")
+            f.write(f"Visible Gaussians: {visible_count}\n")
+            f.write(f"Image brightness: {image_mean:.4f}\n")
+            if static_num > 0:
+                f.write(f"Static mean distance: {static_mean_dist:.4f}m\n")
+            if dynamic_num > 0:
+                f.write(f"Dynamic mean distance: {dynamic_mean_dist:.4f}m\n")
+            if warnings:
+                f.write(f"Warnings: {', '.join(warnings)}\n")
 
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, args):
@@ -353,6 +517,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             render_pkg["render"], render_pkg["viewspace_points"], render_pkg["viewspace_l1points"], render_pkg["visibility_filter"], \
             render_pkg["radii"], render_pkg["depth"], render_pkg["opticalflow"], render_pkg["acc"], render_pkg["dominent_idxs"]
 
+        # Check for dark images and analyze Gaussian density/distance
+        image_mean = image.mean().item()
+        visible_gaussians = visibility_filter.sum().item() if visibility_filter is not None else 0
+        
+        # Analyze if image is dark (threshold: mean < 0.2 or visible < 20% of total)
+        total_gaussians = gaussians._xyz.shape[0] + (gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0)
+        is_dark = image_mean < 0.2 or (total_gaussians > 0 and visible_gaussians < total_gaussians * 0.2)
+        
+        if is_dark and test_cam is not None:
+            print(f"\n[ITER {iteration}] DARK IMAGE DETECTED! Analyzing Gaussian density...")
+            print(f"  Image mean: {image_mean:.4f}, Visible: {visible_gaussians}/{total_gaussians}")
+            analyze_gaussian_density_and_distance(
+                gaussians, test_cam, iteration, image_mean, visible_gaussians, model_path=args.model_path
+            )
+
         # Loss
         Ll1 = l1_loss(image, gt_image)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
@@ -428,16 +607,51 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     gaussians.add_l1_ssim_stats(viewspace_point_error_tensor, static_vis_filter, dynamic_vis_filter, static_num, viewpoint_cam.timestamp)
                     
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
+                    # Track Gaussian counts before densification/pruning
+                    static_before = gaussians._xyz.shape[0]
+                    dynamic_before = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
+                    total_before = static_before + dynamic_before
+                    
                     size_threshold, dynamic_size_threshold = None, None
                     s_max_ssim = opt.s_max_ssim  if iteration > opt.error_base_prune_steps and iteration % (opt.densification_interval * opt.ssim_prune_every) == 0 else 0
                     s_l1_thres = opt.s_l1_thres if iteration > opt.error_base_prune_steps and iteration % (opt.densification_interval * opt.l1_prune_every) == 0 else 100
                     
                     d_max_ssim = opt.d_max_ssim  if iteration > opt.error_base_prune_steps and iteration % (opt.densification_interval * opt.ssim_prune_every) == 0 else 0
                     d_l1_thres = opt.d_l1_thres if iteration > opt.error_base_prune_steps and iteration % (opt.densification_interval * opt.l1_prune_every) == 0 else 100
+                    
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 
                                                 opt.densify_dgrad_threshold, 
                                                 0.01, 0.01, scene.cameras_extent, size_threshold, dynamic_size_threshold,
                                                 s_max_ssim=s_max_ssim, s_l1_thres=s_l1_thres, d_max_ssim=d_max_ssim, d_l1_thres=d_l1_thres)
+                    
+                    # Track Gaussian counts after densification/pruning
+                    static_after = gaussians._xyz.shape[0]
+                    dynamic_after = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
+                    total_after = static_after + dynamic_after
+                    
+                    static_change = static_after - static_before
+                    dynamic_change = dynamic_after - dynamic_before
+                    total_change = total_after - total_before
+                    
+                    print(f"\n[ITER {iteration}] DENSIFICATION/PRUNING:")
+                    print(f"  Before: Static={static_before}, Dynamic={dynamic_before}, Total={total_before}")
+                    print(f"  After:  Static={static_after}, Dynamic={dynamic_after}, Total={total_after}")
+                    print(f"  Change: Static={static_change:+d}, Dynamic={dynamic_change:+d}, Total={total_change:+d}")
+                    
+                    # Check if too many Gaussians were pruned
+                    if total_change < -total_before * 0.1:  # More than 10% reduction
+                        print(f"  ⚠️  WARNING: Large reduction in Gaussians ({total_change} removed, {100.0*abs(total_change)/total_before:.1f}%)")
+                        if test_cam is not None:
+                            # Re-analyze after pruning
+                            with torch.no_grad():
+                                test_render = render(test_cam, gaussians, pipe, background, near=dataset.near, far=dataset.far)
+                                test_image_mean = test_render["render"].mean().item()
+                                test_visible = test_render["visibility_filter"].sum().item() if test_render["visibility_filter"] is not None else 0
+                                if test_image_mean < 0.2:
+                                    print(f"  ⚠️  Test camera image is dark after pruning! Mean={test_image_mean:.4f}")
+                                    analyze_gaussian_density_and_distance(
+                                        gaussians, test_cam, iteration, test_image_mean, test_visible, model_path=args.model_path
+                                    )
                 elif iteration > opt.extract_from_iter and iteration % opt.extracton_interval == 0:
                     static_num = gaussians._xyz.shape[0]
                     candidate = gaussians.get_errorneous_timestamp()
@@ -448,9 +662,39 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             # if prune_inv and iteration < opt.iterations - 5000:
             if prune_inv and iteration < opt.iterations and iteration > 3000:
+                # Track before invisible pruning
+                static_before_inv = gaussians._xyz.shape[0]
+                dynamic_before_inv = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
+                total_before_inv = static_before_inv + dynamic_before_inv
+                
                 gaussians.prune_invisible()
                 if opt.l1_accum:
                     gaussians.prune_small()
+                
+                # Track after invisible pruning
+                static_after_inv = gaussians._xyz.shape[0]
+                dynamic_after_inv = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
+                total_after_inv = static_after_inv + dynamic_after_inv
+                
+                inv_change = total_after_inv - total_before_inv
+                print(f"\n[ITER {iteration}] INVISIBLE PRUNING:")
+                print(f"  Before: Static={static_before_inv}, Dynamic={dynamic_before_inv}, Total={total_before_inv}")
+                print(f"  After:  Static={static_after_inv}, Dynamic={dynamic_after_inv}, Total={total_after_inv}")
+                print(f"  Removed: {abs(inv_change)} Gaussians ({100.0*abs(inv_change)/total_before_inv if total_before_inv > 0 else 0:.1f}%)")
+                
+                if abs(inv_change) > total_before_inv * 0.1:  # More than 10% removed
+                    print(f"  ⚠️  WARNING: Large invisible pruning! Check if too aggressive.")
+                    if test_cam is not None:
+                        with torch.no_grad():
+                            test_render = render(test_cam, gaussians, pipe, background, near=dataset.near, far=dataset.far)
+                            test_image_mean = test_render["render"].mean().item()
+                            test_visible = test_render["visibility_filter"].sum().item() if test_render["visibility_filter"] is not None else 0
+                            if test_image_mean < 0.2:
+                                print(f"  ⚠️  Test camera image is dark after invisible pruning! Mean={test_image_mean:.4f}")
+                                analyze_gaussian_density_and_distance(
+                                    gaussians, test_cam, iteration, test_image_mean, test_visible, model_path=args.model_path
+                                )
+                
                 prune_inv = False
                 
             # Optimizer step
