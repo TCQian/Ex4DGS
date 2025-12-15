@@ -513,6 +513,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     # Record training start time
     training_start_time = time.time()
     
+    # Log initial Gaussian counts
+    initial_static = gaussians._xyz.shape[0]
+    initial_dynamic = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
+    initial_total = initial_static + initial_dynamic
+    print(f"\n{'='*80}")
+    print(f"[INITIAL] GAUSSIAN COUNTS")
+    print(f"{'='*80}")
+    print(f"  Static Gaussians: {initial_static:,}")
+    print(f"  Dynamic Gaussians: {initial_dynamic:,}")
+    print(f"  Total Gaussians: {initial_total:,}")
+    print(f"{'='*80}\n")
+    
     # Initial verification (before any expansion)
     if test_cam is not None and first_iter == 1:
         verify_gaussians_before_after_expansion(
@@ -687,9 +699,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     total_change = total_after - total_before
                     
                     print(f"\n[ITER {iteration}] DENSIFICATION/PRUNING:")
-                    print(f"  Before: Static={static_before}, Dynamic={dynamic_before}, Total={total_before}")
-                    print(f"  After:  Static={static_after}, Dynamic={dynamic_after}, Total={total_after}")
-                    print(f"  Change: Static={static_change:+d}, Dynamic={dynamic_change:+d}, Total={total_change:+d}")
+                    print(f"  Before: Static={static_before:,}, Dynamic={dynamic_before:,}, Total={total_before:,}")
+                    print(f"  After:  Static={static_after:,}, Dynamic={dynamic_after:,}, Total={total_after:,}")
+                    print(f"  Change: Static={static_change:+,}, Dynamic={dynamic_change:+,}, Total={total_change:+,}")
+                    print(f"  Change %: Static={100.0*static_change/static_before if static_before > 0 else 0:+.2f}%, Dynamic={100.0*dynamic_change/dynamic_before if dynamic_before > 0 else 0:+.2f}%, Total={100.0*total_change/total_before if total_before > 0 else 0:+.2f}%")
+                    print(f"  Dynamic/Static ratio: Before={dynamic_before/static_before*100 if static_before > 0 else 0:.2f}%, After={dynamic_after/static_after*100 if static_after > 0 else 0:.2f}%")
+                    print(f"  Total vs Initial: {total_after:,} / {initial_total:,} = {100.0*total_after/initial_total if initial_total > 0 else 0:.1f}% of initial")
                     
                     # Check if too many Gaussians were pruned
                     if total_change < -total_before * 0.1:  # More than 10% reduction
@@ -707,9 +722,30 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                                     )
                 elif iteration > opt.extract_from_iter and iteration % opt.extracton_interval == 0:
                     static_num = gaussians._xyz.shape[0]
+                    # Track before extraction
+                    static_before_ext = gaussians._xyz.shape[0]
+                    dynamic_before_ext = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
+                    total_before_ext = static_before_ext + dynamic_before_ext
+                    
                     candidate = gaussians.get_errorneous_timestamp()
                     if not candidate is None:
                         gaussians.extract_dynamic_points_from_static(torch.tensor(viewpoint_cam.T).unsqueeze(0), candidate, static_vis_filter, scene.cameras_extent, percentile=opt.extract_percentile, max_dur=sample_len)
+                        
+                        # Track after extraction
+                        static_after_ext = gaussians._xyz.shape[0]
+                        dynamic_after_ext = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
+                        total_after_ext = static_after_ext + dynamic_after_ext
+                        
+                        static_extracted = static_before_ext - static_after_ext
+                        dynamic_added = dynamic_after_ext - dynamic_before_ext
+                        
+                        print(f"\n[ITER {iteration}] DYNAMIC EXTRACTION (from erroneous timestamp):")
+                        print(f"  Before: Static={static_before_ext:,}, Dynamic={dynamic_before_ext:,}, Total={total_before_ext:,}")
+                        print(f"  After:  Static={static_after_ext:,}, Dynamic={dynamic_after_ext:,}, Total={total_after_ext:,}")
+                        print(f"  Extracted: {static_extracted:,} static → {dynamic_added:,} dynamic")
+                        print(f"  Dynamic/Static ratio: {dynamic_after_ext/static_after_ext*100 if static_after_ext > 0 else 0:.2f}%")
+                    else:
+                        print(f"\n[ITER {iteration}] DYNAMIC EXTRACTION: No erroneous timestamp candidate found")
             if iteration % (opt.densification_interval*4) == 0 and iteration < opt.densify_until_iter - 3000:
                 gaussians.adjust_temp_opa(max_dur=sample_len)
 
@@ -731,9 +767,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 
                 inv_change = total_after_inv - total_before_inv
                 print(f"\n[ITER {iteration}] INVISIBLE PRUNING:")
-                print(f"  Before: Static={static_before_inv}, Dynamic={dynamic_before_inv}, Total={total_before_inv}")
-                print(f"  After:  Static={static_after_inv}, Dynamic={dynamic_after_inv}, Total={total_after_inv}")
-                print(f"  Removed: {abs(inv_change)} Gaussians ({100.0*abs(inv_change)/total_before_inv if total_before_inv > 0 else 0:.1f}%)")
+                print(f"  Before: Static={static_before_inv:,}, Dynamic={dynamic_before_inv:,}, Total={total_before_inv:,}")
+                print(f"  After:  Static={static_after_inv:,}, Dynamic={dynamic_after_inv:,}, Total={total_after_inv:,}")
+                print(f"  Removed: {abs(inv_change):,} Gaussians ({100.0*abs(inv_change)/total_before_inv if total_before_inv > 0 else 0:.1f}%)")
+                print(f"  Dynamic/Static ratio: Before={dynamic_before_inv/static_before_inv*100 if static_before_inv > 0 else 0:.2f}%, After={dynamic_after_inv/static_after_inv*100 if static_after_inv > 0 else 0:.2f}%")
+                print(f"  Total vs Initial: {total_after_inv:,} / {initial_total:,} = {100.0*total_after_inv/initial_total if initial_total > 0 else 0:.1f}% of initial")
                 
                 if abs(inv_change) > total_before_inv * 0.1:  # More than 10% removed
                     print(f"  ⚠️  WARNING: Large invisible pruning! Check if too aggressive.")
@@ -799,8 +837,30 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if mark_extract:
                 static_num = gaussians._xyz.shape[0]
                 static_vis_filter = visibility_filter[:static_num]
+                
+                # Track before extraction
+                static_before_ext = gaussians._xyz.shape[0]
+                dynamic_before_ext = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
+                total_before_ext = static_before_ext + dynamic_before_ext
+                
                 gaussians.extract_dynamic_points_from_static(torch.tensor(viewpoint_cam.T).unsqueeze(0), viewpoint_cam.timestamp, 
                                                              static_vis_filter, scene.cameras_extent, percentile=opt.extract_percentile, max_dur=sample_len)
+                
+                # Track after extraction
+                static_after_ext = gaussians._xyz.shape[0]
+                dynamic_after_ext = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
+                total_after_ext = static_after_ext + dynamic_after_ext
+                
+                static_extracted = static_before_ext - static_after_ext
+                dynamic_added = dynamic_after_ext - dynamic_before_ext
+                
+                print(f"\n[ITER {iteration}] DYNAMIC EXTRACTION (from mark_extract, timestamp={viewpoint_cam.timestamp}):")
+                print(f"  Before: Static={static_before_ext:,}, Dynamic={dynamic_before_ext:,}, Total={total_before_ext:,}")
+                print(f"  After:  Static={static_after_ext:,}, Dynamic={dynamic_after_ext:,}, Total={total_after_ext:,}")
+                print(f"  Extracted: {static_extracted:,} static → {dynamic_added:,} dynamic")
+                print(f"  Dynamic/Static ratio: {dynamic_after_ext/static_after_ext*100 if static_after_ext > 0 else 0:.2f}%")
+                print(f"  Total Gaussian change: {total_after_ext - total_before_ext:+,}")
+                
                 mark_extract = False
 
     # Calculate and print total training time
