@@ -435,6 +435,64 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                               interp_type=dataset.interp_type, rot_interp_type=dataset.rot_interp_type, 
                               time_pad_type=dataset.time_pad_type, var_pad=dataset.var_pad, kernel_size=dataset.kernel_size)
     scene = Scene(dataset, gaussians, use_timepad=True)
+    
+    # Print cameras_extent information at initialization
+    spatial_lr_scale = scene.cameras_extent
+    print(f"\n{'='*80}")
+    print(f"SCENE CAMERAS_EXTENT INITIALIZATION")
+    print(f"{'='*80}")
+    print(f"cameras_extent (scene radius): {spatial_lr_scale:.6f}")
+    print(f"\nThis value affects the following operations:")
+    print(f"  1. Gaussian Model Initialization (create_from_pcd):")
+    print(f"     - Sets spatial_lr_scale = {spatial_lr_scale:.6f}")
+    print(f"     - Used to scale learning rates for position parameters")
+    print(f"  2. Densification/Pruning Operations (densify_and_prune):")
+    print(f"     - Pruning threshold: big_points_ws > 0.1 * extent = {0.1 * spatial_lr_scale:.6f}")
+    print(f"     - Determines when to prune large Gaussians in world space")
+    print(f"  3. Dynamic Point Extraction (extract_dynamic_points_from_static):")
+    print(f"     - Motion threshold: motion_thres * extent = {1000.0 * spatial_lr_scale:.6f}")
+    print(f"     - Min motion threshold: min_motion_thres * extent = {1e-6 * spatial_lr_scale:.12f}")
+    print(f"     - Determines which static points become dynamic based on displacement")
+    print(f"{'='*80}\n")
+    
+    # Log if Gaussian model was initialized with cameras_extent
+    if not scene.loaded_iter:
+        print(f"[INIT] Gaussian model initialized with cameras_extent = {spatial_lr_scale:.6f}")
+        print(f"       This sets spatial_lr_scale for learning rate calculations\n")
+    
+    # Print optimization arguments before and after cameras_extent scaling
+    print(f"\n{'='*80}")
+    print(f"OPTIMIZATION ARGUMENTS: BEFORE AND AFTER cameras_extent SCALING")
+    print(f"{'='*80}")
+    print(f"cameras_extent (spatial_lr_scale): {spatial_lr_scale:.6f}")
+    print(f"\nLearning Rate Parameters Affected by cameras_extent:")
+    print(f"\n  Static Gaussians (xyz):")
+    print(f"    position_lr_init:")
+    print(f"      Before: {opt.position_lr_init:.8f}")
+    print(f"      After:  {opt.position_lr_init * spatial_lr_scale:.8f} (= {opt.position_lr_init:.8f} × {spatial_lr_scale:.6f})")
+    print(f"    position_lr_final:")
+    print(f"      Before: {opt.position_lr_final:.8f}")
+    print(f"      After:  {opt.position_lr_final * spatial_lr_scale:.8f} (= {opt.position_lr_final:.8f} × {spatial_lr_scale:.6f})")
+    print(f"\n  Dynamic Gaussians (motion_xyz):")
+    print(f"    dynamic_position_lr_init:")
+    print(f"      Before: {opt.dynamic_position_lr_init:.8f}")
+    print(f"      After:  {opt.dynamic_position_lr_init * spatial_lr_scale:.8f} (= {opt.dynamic_position_lr_init:.8f} × {spatial_lr_scale:.6f})")
+    print(f"    dynamic_position_lr_final:")
+    print(f"      Before: {opt.dynamic_position_lr_final:.8f}")
+    print(f"      After:  {opt.dynamic_position_lr_final * spatial_lr_scale:.8f} (= {opt.dynamic_position_lr_final:.8f} × {spatial_lr_scale:.6f})")
+    print(f"\nLearning Rate Parameters NOT Affected by cameras_extent:")
+    print(f"    feature_lr: {opt.feature_lr:.8f}")
+    print(f"    opacity_lr: {opt.opacity_lr:.8f}")
+    print(f"    scaling_lr: {opt.scaling_lr:.8f}")
+    print(f"    rotation_lr: {opt.rotation_lr:.8f}")
+    print(f"    disp_lr: {opt.disp_lr:.8f}")
+    print(f"    feature_motion_lr: {opt.feature_motion_lr:.8f}")
+    print(f"    rotation_motion_lr: {opt.rotation_motion_lr:.8f}")
+    print(f"    opacity_motion_lr: {opt.opacity_motion_lr:.8f}")
+    print(f"    opacity_motion_center_lr: {opt.opacity_motion_center_lr:.8f}")
+    print(f"    opacity_motion_var_lr: {opt.opacity_motion_var_lr:.8f}")
+    print(f"{'='*80}\n")
+    
     gaussians.training_setup(opt)
     args.duration = dataset.duration
     
@@ -684,6 +742,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     d_max_ssim = opt.d_max_ssim  if iteration > opt.error_base_prune_steps and iteration % (opt.densification_interval * opt.ssim_prune_every) == 0 else 0
                     d_l1_thres = opt.d_l1_thres if iteration > opt.error_base_prune_steps and iteration % (opt.densification_interval * opt.l1_prune_every) == 0 else 100
                     
+                    # Log cameras_extent usage in densify_and_prune
+                    print(f"\n[ITER {iteration}] DENSIFY_AND_PRUNE using cameras_extent:")
+                    print(f"  cameras_extent: {scene.cameras_extent:.6f}")
+                    print(f"  Used for:")
+                    print(f"    1. Pruning threshold: big_points_ws > 0.1 * extent = {0.1 * scene.cameras_extent:.6f}")
+                    print(f"       (Gaussians with scaling > this threshold are pruned)")
+                    print(f"    2. Passed to densify_and_split():")
+                    print(f"       - Split threshold: scaling > percent_dense * extent = {opt.percent_dense * scene.cameras_extent:.6f}")
+                    print(f"       - Big points threshold: scaling > 0.1 * extent = {0.1 * scene.cameras_extent:.6f}")
+                    print(f"    3. Passed to densify_and_clone():")
+                    print(f"       - Clone threshold: scaling < percent_dense * extent = {opt.percent_dense * scene.cameras_extent:.6f}")
+                    
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 
                                                 opt.densify_dgrad_threshold, 
                                                 0.01, 0.01, scene.cameras_extent, size_threshold, dynamic_size_threshold,
@@ -729,6 +799,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     
                     candidate = gaussians.get_errorneous_timestamp()
                     if not candidate is None:
+                        # Log cameras_extent usage in extract_dynamic_points_from_static
+                        print(f"\n[ITER {iteration}] EXTRACT_DYNAMIC_POINTS using cameras_extent:")
+                        print(f"  cameras_extent: {scene.cameras_extent:.6f}")
+                        print(f"  Used for motion thresholds:")
+                        print(f"    - motion_thres * extent = {1000.0 * scene.cameras_extent:.6f} (default motion_thres=1000.0)")
+                        print(f"    - min_motion_thres * extent = {1e-6 * scene.cameras_extent:.12f} (default min_motion_thres=1e-6)")
+                        print(f"  These thresholds determine which static points become dynamic based on displacement magnitude")
+                        
                         gaussians.extract_dynamic_points_from_static(torch.tensor(viewpoint_cam.T).unsqueeze(0), candidate, static_vis_filter, scene.cameras_extent, percentile=opt.extract_percentile, max_dur=sample_len)
                         
                         # Track after extraction
@@ -842,6 +920,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 static_before_ext = gaussians._xyz.shape[0]
                 dynamic_before_ext = gaussians._xyz_motion.shape[0] if gaussians._xyz_motion.numel() > 0 else 0
                 total_before_ext = static_before_ext + dynamic_before_ext
+                
+                # Log cameras_extent usage in extract_dynamic_points_from_static (mark_extract path)
+                print(f"\n[ITER {iteration}] EXTRACT_DYNAMIC_POINTS (mark_extract) using cameras_extent:")
+                print(f"  cameras_extent: {scene.cameras_extent:.6f}")
+                print(f"  Used for motion thresholds:")
+                print(f"    - motion_thres * extent = {1000.0 * scene.cameras_extent:.6f} (default motion_thres=1000.0)")
+                print(f"    - min_motion_thres * extent = {1e-6 * scene.cameras_extent:.12f} (default min_motion_thres=1e-6)")
+                print(f"  These thresholds determine which static points become dynamic based on displacement magnitude")
                 
                 gaussians.extract_dynamic_points_from_static(torch.tensor(viewpoint_cam.T).unsqueeze(0), viewpoint_cam.timestamp, 
                                                              static_vis_filter, scene.cameras_extent, percentile=opt.extract_percentile, max_dur=sample_len)
