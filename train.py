@@ -22,6 +22,7 @@ import torch
 from tqdm import tqdm
 from PIL import Image
 import joblib
+import numpy as np
 
 from gaussian_renderer import render, network_gui
 from scene import Scene, getmodel
@@ -329,7 +330,8 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         tb_writer.add_scalar('iter_time', elapsed, iteration)
         
     # Report test and samples of training set
-    if iteration in testing_iterations:
+    # Always render at iteration 1 to verify camera setup is correct
+    if iteration in testing_iterations or iteration == 1:
         torch.cuda.empty_cache()
 
         
@@ -361,8 +363,32 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                     image = torch.clamp(rend_pkg["render"], 0.0, 1.0).cuda()
                     if tb_writer and (idx < 5):
                         tb_writer.add_images(config['name'] + "_view_{}/render".format(viewpoint.image_name), image[None], global_step=iteration)
-                        if iteration == testing_iterations[0]:
+                        if testing_iterations and len(testing_iterations) > 0 and iteration == testing_iterations[0]:
                             tb_writer.add_images(config['name'] + "_view_{}/ground_truth".format(viewpoint.image_name), gt_image[None], global_step=iteration)
+                    
+                    # Save rendered images to disk at iteration 1 for debugging resolution issues
+                    if iteration == 1:
+                        save_dir = os.path.join(scene.model_path, "first_iter_images", config['name'])
+                        os.makedirs(save_dir, exist_ok=True)
+                        
+                        # Save rendered image
+                        image_np = (image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                        image_pil = Image.fromarray(image_np)
+                        render_path = os.path.join(save_dir, f"iter_{iteration:06d}_{viewpoint.image_name}_render.png")
+                        image_pil.save(render_path)
+                        
+                        # Save ground truth image
+                        gt_image_np = (gt_image.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                        gt_image_pil = Image.fromarray(gt_image_np)
+                        gt_path = os.path.join(save_dir, f"iter_{iteration:06d}_{viewpoint.image_name}_gt.png")
+                        gt_image_pil.save(gt_path)
+                        
+                        if idx == 0:  # Print info for first image only
+                            print(f"[ITER {iteration}] Saved first iteration images to {save_dir}")
+                            print(f"  Rendered image: {render_path}")
+                            print(f"  Ground truth: {gt_path}")
+                            print(f"  Image stats - mean: {image.mean().item():.4f}, std: {image.std().item():.4f}, min: {image.min().item():.4f}, max: {image.max().item():.4f}")
+                    
                     l1_test += l1_loss(image, gt_image).mean().double().detach().item()
                     psnr_test += psnr(image.unsqueeze(0), gt_image.unsqueeze(0)).mean().double().detach().item()
                     count += 1
