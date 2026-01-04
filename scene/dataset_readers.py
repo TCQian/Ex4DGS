@@ -612,16 +612,12 @@ def readPanopticSportsinfos(datadir, images, eval, args):
     # Since this data set has no colmap data, we start with random points
     plz_path = os.path.join(datadir, "init_pt_cld.npz")
     data = np.load(plz_path)["data"]
-    xyz = data[:,:3] / scene_radius  # Normalize point cloud like Technicolor dataset
+    xyz = data[:,:3]
     rgb = data[:,3:6]
     num_pts = xyz.shape[0]
     times = data[:,6:7]
     pcd = BasicPointCloud(points=xyz, colors=rgb, normals=np.ones((num_pts, 3)), times=times)
     storePly(ply_path, xyz, rgb)
-    
-    # Set radius to 1 after normalization, like Technicolor dataset
-    nerf_normalization['radius'] = 1
-    
     # pcd = fetchPly(ply_path)
     # breakpoint()
     scene_info = SceneInfo(point_cloud=pcd,
