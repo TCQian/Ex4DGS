@@ -29,6 +29,7 @@ from utils.image_utils import psnr
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, OptimizationParams, get_combined_args
 from scene.c_gaussian_model import CGaussianModel as GaussianModel
+from scene.cmu_dataset import CMUCamera
 from utils.loss_utils import ssim
 
 
@@ -66,10 +67,49 @@ def render_set(model_path, name, iteration, scene, gaussians, pipeline, backgrou
         gt = next(images).cuda()
 
         if idx % inverval == 0:
+            # Assert: Verify camera dimensions are consistent
+            if isinstance(cam, CMUCamera):
+                assert cam.image_width > 0 and cam.image_height > 0, \
+                    f"Invalid camera dimensions: w={cam.image_width}, h={cam.image_height} for {cam.image_name}"
+                assert cam.resolution == (cam.image_width, cam.image_height), \
+                    f"Camera resolution mismatch: resolution={cam.resolution}, image_width={cam.image_width}, image_height={cam.image_height}"
+                
+                # Assert: Verify projection matrix matches image dimensions
+                viewmatrix_inv = torch.inverse(cam.viewmatrix)
+                opengl_proj = viewmatrix_inv.bmm(cam.projmatrix).squeeze(0).transpose(0, 1)
+                expected_fx_scale = 2 * cam.fx / cam.image_width
+                expected_fy_scale = 2 * cam.fy / cam.image_height
+                assert abs(opengl_proj[0, 0].item() - expected_fx_scale) < 1e-4, \
+                    f"Rendering: Projection matrix[0,0] mismatch for {cam.image_name}: " \
+                    f"expected {expected_fx_scale}, got {opengl_proj[0,0].item()} (image_width={cam.image_width}, fx={cam.fx})"
+                assert abs(opengl_proj[1, 1].item() - expected_fy_scale) < 1e-4, \
+                    f"Rendering: Projection matrix[1,1] mismatch for {cam.image_name}: " \
+                    f"expected {expected_fy_scale}, got {opengl_proj[1,1].item()} (image_height={cam.image_height}, fy={cam.fy})"
+            
             rendering_dict = render(cam, gaussians, pipeline, background, near=near, far=far)
             rendering = rendering_dict["render"]
             
             img_name = cam.image_name
+            
+            # Assert: Verify rendered image dimensions match camera dimensions
+            if isinstance(cam, CMUCamera):
+                assert rendering.shape[1] == cam.image_height, \
+                    f"Rendered image height mismatch: expected {cam.image_height}, got {rendering.shape[1]} for {img_name}"
+                assert rendering.shape[2] == cam.image_width, \
+                    f"Rendered image width mismatch: expected {cam.image_width}, got {rendering.shape[2]} for {img_name}"
+            
+            # Debug: Check resolution mismatch
+            if rendering.shape != gt.shape:
+                print(f"[WARNING] Resolution mismatch for {img_name}:")
+                print(f"  Rendered: {rendering.shape} (H={rendering.shape[1]}, W={rendering.shape[2]})")
+                print(f"  GT: {gt.shape} (H={gt.shape[1]}, W={gt.shape[2]})")
+                print(f"  Camera image_width: {cam.image_width}, image_height: {cam.image_height}")
+                print(f"  Camera resolution: {cam.resolution}")
+                # Resize GT to match rendered image
+                if rendering.shape[1:] != gt.shape[1:]:
+                    from torch.nn.functional import interpolate
+                    gt = interpolate(gt.unsqueeze(0), size=(rendering.shape[1], rendering.shape[2]), mode='bilinear', align_corners=False).squeeze(0)
+                    print(f"  Resized GT to match rendered: {gt.shape}")
             
             if save_img:
                 # Flatten the image name by replacing directory separators with underscores
