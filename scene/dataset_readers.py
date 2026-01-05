@@ -253,10 +253,11 @@ def readN3VCameras(cam_extrinsics, cam_intrinsics, images_folder, near, far, sta
         cx, cy = W / 2.0, H / 2.0
 
         K = np.eye(3)
-        K[0, 0] = focal * W / W / 2.0
-        K[0, 2] = cx * W / W / 2.0
-        K[1, 1] = focal * H / H / 2.0
-        K[1, 2] = cy * H / H / 2.0
+        # div by 2 because the resolution=2 but this is done in unified preprocessing
+        K[0, 0] = focal * W / W #/ 2.0 
+        K[0, 2] = cx * W / W #/ 2.0
+        K[1, 1] = focal * H / H #/ 2.0 
+        K[1, 2] = cy * H / H #/ 2.0
       
     totalcamname = []
     for idx, key in enumerate(cam_extrinsics): # first is cam20_ so we strictly sort by camera name

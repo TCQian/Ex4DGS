@@ -6,7 +6,7 @@
   "d_max_ssim": 0.6,
   "s_l1_thres": 0.08,
   "d_l1_thres": 0.08,
-  "resolution": 2,
+  "resolution": 1,
   "duration": -1,
   "start_duration": 10,
   "time_interval": 10,
