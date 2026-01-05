@@ -32,48 +32,18 @@ class CMUCamera(NamedTuple):
     im_scale: float
     T: np.ndarray # translation matrix
     image_name: str
-    
-    # Store original intrinsics from JSON for accurate resolution scaling
-    fx: float  # Original fx from K matrix (None if not available)
-    fy: float  # Original fy from K matrix (None if not available)
-    cx: float  # Original cx from K matrix (None if not available)
-    cy: float  # Original cy from K matrix (None if not available)
 
 def setup_camera(w, h, k, w2c, timestamp, cam_id, image_path, near=0.01, far=100):
     fx, fy, cx, cy = k[0][0], k[1][1], k[0][2], k[1][2]
-    
-    # Assert: Image dimensions should be 640x340 or 640x360 (or other valid dimensions)
-    assert w > 0 and h > 0, f"Invalid image dimensions: w={w}, h={h}"
-    assert fx > 0 and fy > 0, f"Invalid focal lengths: fx={fx}, fy={fy}"
-    assert 0 <= cx < w and 0 <= cy < h, f"Invalid principal point: cx={cx}, cy={cy} (image size: {w}x{h})"
-    
     w2c = torch.tensor(w2c).cuda().float()
     cam_center = torch.inverse(w2c)[:3, 3]
     T = cam_center.cpu().numpy()
     w2c = w2c.unsqueeze(0).transpose(1, 2)
-    
-    # Compute OpenGL projection matrix
     opengl_proj = torch.tensor([[2 * fx / w, 0.0, -(w - 2 * cx) / w, 0.0],
                                 [0.0, 2 * fy / h, -(h - 2 * cy) / h, 0.0],
                                 [0.0, 0.0, far / (far - near), -(far * near) / (far - near)],
                                 [0.0, 0.0, 1.0, 0.0]]).cuda().float().unsqueeze(0).transpose(1, 2)
     full_proj = w2c.bmm(opengl_proj)
-    
-    # Assert: Verify projection matrix computation
-    # Extract opengl_proj from full_proj to verify
-    viewmatrix_inv = torch.inverse(w2c)
-    extracted_opengl_proj = viewmatrix_inv.bmm(full_proj).squeeze(0).transpose(0, 1)
-    expected_opengl_proj = opengl_proj.squeeze(0).transpose(0, 1)
-    assert torch.allclose(extracted_opengl_proj, expected_opengl_proj, atol=1e-5), \
-        f"Projection matrix mismatch in setup_camera! Expected {expected_opengl_proj}, got {extracted_opengl_proj}"
-    
-    # Assert: Verify projection matrix matches image dimensions
-    # opengl_proj[0,0] should be 2*fx/w, opengl_proj[1,1] should be 2*fy/h
-    assert abs(extracted_opengl_proj[0, 0].item() - 2 * fx / w) < 1e-5, \
-        f"Projection matrix[0,0] mismatch: expected {2*fx/w}, got {extracted_opengl_proj[0,0].item()}"
-    assert abs(extracted_opengl_proj[1, 1].item() - 2 * fy / h) < 1e-5, \
-        f"Projection matrix[1,1] mismatch: expected {2*fy/h}, got {extracted_opengl_proj[1,1].item()}"
-    
     cam = CMUCamera(
         image_height=h,
         image_width=w,
@@ -93,18 +63,8 @@ def setup_camera(w, h, k, w2c, timestamp, cam_id, image_path, near=0.01, far=100
         resolution=(w, h),
         im_scale=1.0,
         T=T,
-        image_name=image_path,
-        fx=fx,  # Store original intrinsics from JSON
-        fy=fy,
-        cx=cx,
-        cy=cy
+        image_name=image_path
     )
-    
-    # Assert: Verify camera fields match input dimensions
-    assert cam.image_width == w, f"Camera image_width mismatch: expected {w}, got {cam.image_width}"
-    assert cam.image_height == h, f"Camera image_height mismatch: expected {h}, got {cam.image_height}"
-    assert cam.resolution == (w, h), f"Camera resolution mismatch: expected {(w, h)}, got {cam.resolution}"
-    
     return cam
 
 class PanopticDataset(Dataset):

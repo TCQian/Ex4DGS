@@ -201,13 +201,6 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
     # Check if this is a CMU Panoptic dataset entry (dictionary with 'camera' key)
     if isinstance(cam_info, CMUCamera):
         orig_w, orig_h = cam_info.image_width, cam_info.image_height
-        
-        # Assert: Original dimensions should be valid
-        assert orig_w > 0 and orig_h > 0, f"Invalid original dimensions: w={orig_w}, h={orig_h}"
-        assert hasattr(cam_info, 'fx') and cam_info.fx is not None, "Camera missing fx intrinsic"
-        assert hasattr(cam_info, 'fy') and cam_info.fy is not None, "Camera missing fy intrinsic"
-        assert hasattr(cam_info, 'cx') and cam_info.cx is not None, "Camera missing cx intrinsic"
-        assert hasattr(cam_info, 'cy') and cam_info.cy is not None, "Camera missing cy intrinsic"
 
         if args.resolution in [1, 2, 4, 8]:
             resolution = round(orig_w/(resolution_scale * args.resolution)),  round(orig_h/(resolution_scale * args.resolution))
@@ -227,56 +220,7 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
             scale = float(global_down) * float(resolution_scale)
             resolution = (int(orig_w / scale), int(orig_h / scale))
 
-        new_w, new_h = resolution[0], resolution[1]
-        
-        # Assert: New resolution should be valid
-        assert new_w > 0 and new_h > 0, f"Invalid new resolution: w={new_w}, h={new_h}"
-        
-        # Recompute projection matrix if resolution changed
-        if new_w != orig_w or new_h != orig_h:
-            # Extract original intrinsics
-            orig_fx = cam_info.fx
-            orig_fy = cam_info.fy
-            orig_cx = cam_info.cx
-            orig_cy = cam_info.cy
-            
-            # Scale intrinsics proportionally
-            scale_x = new_w / orig_w
-            scale_y = new_h / orig_h
-            new_fx = orig_fx * scale_x
-            new_fy = orig_fy * scale_y
-            new_cx = orig_cx * scale_x
-            new_cy = orig_cy * scale_y
-            
-            # Recompute OpenGL projection matrix with new resolution and intrinsics
-            near = 0.01
-            far = 100.0
-            opengl_proj = torch.tensor([[2 * new_fx / new_w, 0.0, -(new_w - 2 * new_cx) / new_w, 0.0],
-                                        [0.0, 2 * new_fy / new_h, -(new_h - 2 * new_cy) / new_h, 0.0],
-                                        [0.0, 0.0, far / (far - near), -(far * near) / (far - near)],
-                                        [0.0, 0.0, 1.0, 0.0]]).cuda().float().unsqueeze(0).transpose(1, 2)
-            new_projmatrix = cam_info.viewmatrix.bmm(opengl_proj)
-            
-            # Assert: Verify recomputed projection matrix matches new resolution
-            viewmatrix_inv = torch.inverse(cam_info.viewmatrix)
-            extracted_opengl_proj = viewmatrix_inv.bmm(new_projmatrix).squeeze(0).transpose(0, 1)
-            assert abs(extracted_opengl_proj[0, 0].item() - 2 * new_fx / new_w) < 1e-5, \
-                f"Recomputed projection matrix[0,0] mismatch: expected {2*new_fx/new_w}, got {extracted_opengl_proj[0,0].item()}"
-            assert abs(extracted_opengl_proj[1, 1].item() - 2 * new_fy / new_h) < 1e-5, \
-                f"Recomputed projection matrix[1,1] mismatch: expected {2*new_fy/new_h}, got {extracted_opengl_proj[1,1].item()}"
-        else:
-            # Resolution unchanged - verify projection matrix still matches
-            viewmatrix_inv = torch.inverse(cam_info.viewmatrix)
-            extracted_opengl_proj = viewmatrix_inv.bmm(cam_info.projmatrix).squeeze(0).transpose(0, 1)
-            expected_fx_scale = 2 * cam_info.fx / orig_w
-            expected_fy_scale = 2 * cam_info.fy / orig_h
-            assert abs(extracted_opengl_proj[0, 0].item() - expected_fx_scale) < 1e-5, \
-                f"Projection matrix[0,0] mismatch for unchanged resolution: expected {expected_fx_scale}, got {extracted_opengl_proj[0,0].item()}"
-            assert abs(extracted_opengl_proj[1, 1].item() - expected_fy_scale) < 1e-5, \
-                f"Projection matrix[1,1] mismatch for unchanged resolution: expected {expected_fy_scale}, got {extracted_opengl_proj[1,1].item()}"
-            new_projmatrix = cam_info.projmatrix
-
-        new_cam = CMUCamera(
+        return CMUCamera(
             image_height=resolution[1],
             image_width=resolution[0],
             tanfovx=cam_info.tanfovx,
@@ -284,7 +228,7 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
             bg=cam_info.bg,
             scale_modifier=cam_info.scale_modifier,
             viewmatrix=cam_info.viewmatrix,
-            projmatrix=new_projmatrix,
+            projmatrix=cam_info.projmatrix,
             sh_degree=cam_info.sh_degree,
             campos=cam_info.campos,
             prefiltered=cam_info.prefiltered,
@@ -295,39 +239,8 @@ def loadCamVideo(args, id, cam_info, resolution_scale):
             resolution=resolution,
             im_scale=cam_info.im_scale,
             T=cam_info.T,
-            image_name=cam_info.image_name,
-            fx=cam_info.fx,  # Preserve original intrinsics
-            fy=cam_info.fy,
-            cx=cam_info.cx,
-            cy=cam_info.cy
+            image_name=cam_info.image_name
         )
-        
-        # Assert: Final camera dimensions match resolution
-        assert new_cam.image_width == new_w, \
-            f"Final camera image_width mismatch: expected {new_w}, got {new_cam.image_width}"
-        assert new_cam.image_height == new_h, \
-            f"Final camera image_height mismatch: expected {new_h}, got {new_cam.image_height}"
-        assert new_cam.resolution == (new_w, new_h), \
-            f"Final camera resolution mismatch: expected {(new_w, new_h)}, got {new_cam.resolution}"
-        
-        # Assert: Projection matrix matches image dimensions
-        final_viewmatrix_inv = torch.inverse(new_cam.viewmatrix)
-        final_opengl_proj = final_viewmatrix_inv.bmm(new_cam.projmatrix).squeeze(0).transpose(0, 1)
-        if new_w != orig_w or new_h != orig_h:
-            # For scaled resolution, use scaled intrinsics
-            expected_fx_scale = 2 * new_fx / new_w
-            expected_fy_scale = 2 * new_fy / new_h
-        else:
-            # For original resolution, use original intrinsics
-            expected_fx_scale = 2 * cam_info.fx / new_w
-            expected_fy_scale = 2 * cam_info.fy / new_h
-        
-        assert abs(final_opengl_proj[0, 0].item() - expected_fx_scale) < 1e-5, \
-            f"Final projection matrix[0,0] mismatch: expected {expected_fx_scale}, got {final_opengl_proj[0,0].item()} (image_width={new_w})"
-        assert abs(final_opengl_proj[1, 1].item() - expected_fy_scale) < 1e-5, \
-            f"Final projection matrix[1,1] mismatch: expected {expected_fy_scale}, got {final_opengl_proj[1,1].item()} (image_height={new_h})"
-        
-        return new_cam
     
     orig_w, orig_h = cam_info.width, cam_info.height
 
