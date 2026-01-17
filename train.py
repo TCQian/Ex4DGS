@@ -93,6 +93,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     # Record training start time
     training_start_time = time.time()
     
+    # Track camera for attribute logging (iterations 1-2)
+    logged_camera_id = None
+    
     for iteration in range(first_iter, opt.iterations + 1):        
         if network_gui.conn == None:
             network_gui.try_connect()
@@ -119,7 +122,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # Pick a random Camera
         if not viewpoint_stack:
-            viewpoint_stack, train_images = scene.getTrainCameras(return_as='generator', shuffle=True, n_job=1, job_batch_size=1)
+            viewpoint_stack, train_images = scene.getTrainCameras(return_as='generator', shuffle=False, n_job=1, job_batch_size=1)
             viewpoint_stack = viewpoint_stack.copy()
                         
             if iteration > opt.prune_invisible_interval:
@@ -137,12 +140,123 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if (iteration - 1) == debug_from:
             pipe.debug = True
 
+        # Enable attribute logging for iterations 1-2 (for resolution comparison)
+        from scene.cmu_dataset import CMUCamera
+        log_attributes = False
+        if iteration in [1, 2] and isinstance(viewpoint_cam, CMUCamera):
+            cam_id = getattr(viewpoint_cam, 'colmap_id', None)
+            cam_name = getattr(viewpoint_cam, 'image_name', 'unknown')
+            # In iteration 1, store the camera ID; in iteration 2, only log if same camera
+            if iteration == 1:
+                logged_camera_id = cam_id
+                log_attributes = True
+            elif iteration == 2 and cam_id == logged_camera_id:
+                log_attributes = True
+        
+        if log_attributes:
+            pipe.log_gaussian_attributes = True
+            # Store camera identifier for comparison
+            cam_id = getattr(viewpoint_cam, 'colmap_id', None)
+            cam_name = getattr(viewpoint_cam, 'image_name', 'unknown')
+            resolution = getattr(viewpoint_cam, 'resolution', (0, 0))
+            print(f"\n{'='*80}")
+            print(f"[ITER {iteration}] LOGGING GAUSSIAN ATTRIBUTES")
+            print(f"Camera: {cam_name} (colmap_id={cam_id})")
+            print(f"Resolution: {resolution[0]}x{resolution[1]}")
+            print(f"Image dimensions: {viewpoint_cam.image_width}x{viewpoint_cam.image_height}")
+            print(f"{'='*80}")
+
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
         render_pkg = render(viewpoint_cam, gaussians, pipe, bg, near=dataset.near, far=dataset.far)
         image, viewspace_point_tensor, viewspace_point_error_tensor, visibility_filter, radii, depth, flow, acc, idxs = \
             render_pkg["render"], render_pkg["viewspace_points"], render_pkg["viewspace_l1points"], render_pkg["visibility_filter"], \
             render_pkg["radii"], render_pkg["depth"], render_pkg["opticalflow"], render_pkg["acc"], render_pkg["dominent_idxs"]
+        
+        # Print logged attributes after rendering
+        if log_attributes:
+            if hasattr(pipe, '_gaussian_attributes_before') and hasattr(pipe, '_gaussian_attributes_after'):
+                before = pipe._gaussian_attributes_before
+                after = pipe._gaussian_attributes_after
+                
+                print(f"\n[ITER {iteration}] BEFORE PROJECTION (3D attributes):")
+                print(f"  Total Gaussians: {before['num_total']}, Sampled: {before['num_sampled']}")
+                if before['means3D'] is not None:
+                    means3D = before['means3D']
+                    print(f"  means3D (first 5): shape={means3D.shape}")
+                    for i in range(min(5, means3D.shape[0])):
+                        print(f"    [{i}] xyz=({means3D[i,0]:.4f}, {means3D[i,1]:.4f}, {means3D[i,2]:.4f})")
+                    print(f"  means3D stats: min=({means3D[:,0].min():.4f}, {means3D[:,1].min():.4f}, {means3D[:,2].min():.4f}), "
+                          f"max=({means3D[:,0].max():.4f}, {means3D[:,1].max():.4f}, {means3D[:,2].max():.4f}), "
+                          f"mean=({means3D[:,0].mean():.4f}, {means3D[:,1].mean():.4f}, {means3D[:,2].mean():.4f})")
+                
+                if before['scales'] is not None:
+                    scales = before['scales']
+                    print(f"  scales (first 5): shape={scales.shape}")
+                    for i in range(min(5, scales.shape[0])):
+                        print(f"    [{i}] scale=({scales[i,0]:.4f}, {scales[i,1]:.4f}, {scales[i,2]:.4f})")
+                    print(f"  scales stats: min=({scales[:,0].min():.4f}, {scales[:,1].min():.4f}, {scales[:,2].min():.4f}), "
+                          f"max=({scales[:,0].max():.4f}, {scales[:,1].max():.4f}, {scales[:,2].max():.4f})")
+                
+                if before['opacity'] is not None:
+                    opacity = before['opacity']
+                    print(f"  opacity (first 5): shape={opacity.shape}")
+                    for i in range(min(5, opacity.shape[0])):
+                        print(f"    [{i}] opacity={opacity[i,0]:.4f}")
+                    print(f"  opacity stats: min={opacity.min():.4f}, max={opacity.max():.4f}, mean={opacity.mean():.4f}")
+                
+                print(f"\n[ITER {iteration}] AFTER PROJECTION (2D screen-space attributes):")
+                print(f"  Total Gaussians: {after['num_total']}, Sampled: {after['num_sampled']}")
+                if after['means2D'] is not None:
+                    means2D = after['means2D']
+                    print(f"  means2D (first 5): shape={means2D.shape}")
+                    for i in range(min(5, means2D.shape[0])):
+                        print(f"    [{i}] xy=({means2D[i,0]:.4f}, {means2D[i,1]:.4f})")
+                    print(f"  means2D stats: min=({means2D[:,0].min():.4f}, {means2D[:,1].min():.4f}), "
+                          f"max=({means2D[:,0].max():.4f}, {means2D[:,1].max():.4f}), "
+                          f"mean=({means2D[:,0].mean():.4f}, {means2D[:,1].mean():.4f})")
+                    # Check if means2D is within image bounds
+                    in_bounds = (means2D[:,0] >= 0) & (means2D[:,0] < viewpoint_cam.image_width) & \
+                                (means2D[:,1] >= 0) & (means2D[:,1] < viewpoint_cam.image_height)
+                    print(f"  means2D in bounds: {in_bounds.sum().item()}/{means2D.shape[0]} "
+                          f"({100*in_bounds.sum().item()/means2D.shape[0]:.1f}%)")
+                
+                if after['radii'] is not None:
+                    radii_after = after['radii']
+                    print(f"  radii (first 5): shape={radii_after.shape}")
+                    for i in range(min(5, radii_after.shape[0])):
+                        print(f"    [{i}] radius={radii_after[i].item():.4f}")
+                    print(f"  radii stats: min={radii_after.min():.4f}, max={radii_after.max():.4f}, mean={radii_after.mean():.4f}")
+                    print(f"  radii > 0: {(radii_after > 0).sum().item()}/{radii_after.shape[0]} "
+                          f"({100*(radii_after > 0).sum().item()/radii_after.shape[0]:.1f}%)")
+                
+                if after['visibility'] is not None:
+                    visibility = after['visibility']
+                    print(f"  visibility: {visibility.sum().item()}/{visibility.shape[0]} visible "
+                          f"({100*visibility.sum().item()/visibility.shape[0]:.1f}%)")
+                
+                # Projection matrix info
+                if isinstance(viewpoint_cam, CMUCamera):
+                    projmatrix = viewpoint_cam.projmatrix
+                    viewmatrix = viewpoint_cam.viewmatrix
+                    # Extract OpenGL projection matrix
+                    viewmatrix_inv = torch.inverse(viewmatrix)
+                    opengl_proj = viewmatrix_inv.bmm(projmatrix).squeeze(0).transpose(0, 1)
+                    print(f"\n[ITER {iteration}] PROJECTION MATRIX INFO:")
+                    print(f"  Image dimensions: {viewpoint_cam.image_width}x{viewpoint_cam.image_height}")
+                    print(f"  projmatrix[0,0] (2*fx/w): {opengl_proj[0,0].item():.8f}")
+                    print(f"  projmatrix[1,1] (2*fy/h): {opengl_proj[1,1].item():.8f}")
+                    print(f"  projmatrix[0,2] (cx offset): {opengl_proj[0,2].item():.8f}")
+                    print(f"  projmatrix[1,2] (cy offset): {opengl_proj[1,2].item():.8f}")
+                
+                print(f"{'='*80}\n")
+            
+            pipe.log_gaussian_attributes = False
+            # Clear logged data
+            if hasattr(pipe, '_gaussian_attributes_before'):
+                delattr(pipe, '_gaussian_attributes_before')
+            if hasattr(pipe, '_gaussian_attributes_after'):
+                delattr(pipe, '_gaussian_attributes_after')
 
         # Loss
         Ll1 = l1_loss(image, gt_image)
