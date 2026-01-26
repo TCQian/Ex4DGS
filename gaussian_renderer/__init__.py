@@ -121,26 +121,6 @@ def render(viewpoint_camera, pc, pipe, bg_color : torch.Tensor, timestamp=None, 
     else:
         colors_precomp = override_color
 
-    # Log attributes before projection (for debugging resolution comparison)
-    log_attributes = getattr(pipe, 'log_gaussian_attributes', False)
-    if log_attributes:
-        # Capture 3D attributes before projection
-        with torch.no_grad():
-            num_gaussians = means3D.shape[0]
-            # Sample first 100 Gaussians for logging (to avoid huge output)
-            sample_idx = min(100, num_gaussians)
-            sample_mask = torch.arange(sample_idx, device=means3D.device)
-            
-            log_data = {
-                "means3D": means3D[sample_mask].cpu().clone(),
-                "opacity": opacity[sample_mask].cpu().clone() if opacity is not None else None,
-                "scales": scales[sample_mask].cpu().clone() if scales is not None else None,
-                "rotations": rotations[sample_mask].cpu().clone() if rotations is not None else None,
-                "num_total": num_gaussians,
-                "num_sampled": sample_idx
-            }
-            pipe._gaussian_attributes_before = log_data
-
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
     rendered_image, radii, rendered_depth, out_flow, acc, idxs = rasterizer(
         means3D = means3D,
@@ -154,23 +134,6 @@ def render(viewpoint_camera, pc, pipe, bg_color : torch.Tensor, timestamp=None, 
         cov3D_precomp = cov3D_precomp)
 
     torch.cuda.synchronize()
-    
-    # Log attributes after projection (for debugging resolution comparison)
-    if log_attributes:
-        with torch.no_grad():
-            # screenspace_points is filled by rasterizer, sample same indices
-            sample_idx = min(100, screenspace_points.shape[0])
-            sample_mask = torch.arange(sample_idx, device=screenspace_points.device)
-            
-            log_data_after = {
-                "means2D": screenspace_points[sample_mask].cpu().clone(),
-                "radii": radii[sample_mask].cpu().clone() if radii is not None else None,
-                "visibility": (radii > 0)[sample_mask].cpu().clone() if radii is not None else None,
-                "num_total": screenspace_points.shape[0],
-                "num_sampled": sample_idx
-            }
-            pipe._gaussian_attributes_after = log_data_after
-    
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
     return {
