@@ -67,7 +67,7 @@ def render_set(model_path, name, iteration, scene, gaussians, pipeline, backgrou
 
         if idx % inverval == 0:
             rendering_dict = render(cam, gaussians, pipeline, background, near=near, far=far)
-            rendering = rendering_dict["render"]
+            rendering = torch.clamp(rendering_dict["render"], 0.0, 1.0)
             
             img_name = cam.image_name
             
@@ -136,7 +136,7 @@ def render_sets(dataset : ModelParams, iteration : int, opt : OptimizationParams
         gaussians = GaussianModel(dataset.sh_degree, dataset.duration, dataset.time_interval, dataset.time_pad, interp_type=dataset.interp_type, time_pad_type=dataset.time_pad_type)
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, opt=opt)
 
-        bg_color = [1,1,1]
+        bg_color = [1,1,1] if dataset.white_background else [0,0,0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         if not skip_train:

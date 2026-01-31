@@ -33,5 +33,5 @@
   "interp_type": "cube",
   "loader": "cmupanoptic",
   "lazy_loader": true,
-  "random_background": true
+  "random_background": false
 }
