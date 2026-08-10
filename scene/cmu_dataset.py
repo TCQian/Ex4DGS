@@ -123,7 +123,7 @@ class PanopticDataset(Dataset):
             e["time"],
             e["cam_id"],
             img_path,
-            near=0.01,
+            near=1.0,
             far=100.0,
         )
         return cam
@@ -151,7 +151,7 @@ class PanopticDataset(Dataset):
             e["time"],
             e["cam_id"],
             img_path,
-            near=0.01,
+            near=1.0,
             far=100.0,
         )
 
